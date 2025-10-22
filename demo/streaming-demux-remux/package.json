@@ -6,12 +6,24 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
-    "dev": "nodemon --exec ts-node --esm src/main.ts",
+    "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
     "verify": "bash scripts/verify-setup.sh",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "srs:start": "bash scripts/start-srs.sh",
+    "srs:stop": "bash scripts/stop-srs.sh",
+    "srs:restart": "bash scripts/restart-srs.sh",
+    "srs:remove": "bash scripts/remove-srs.sh",
+    "srs:logs": "bash scripts/logs-srs.sh"
   },
-  "keywords": ["hls", "audio", "processing", "ffmpeg", "srs", "streaming"],
+  "keywords": [
+    "hls",
+    "audio",
+    "processing",
+    "ffmpeg",
+    "srs",
+    "streaming"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -22,9 +34,9 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.3",
+    "nodemon": "^3.0.2",
     "ts-node": "^10.9.2",
-    "nodemon": "^3.0.2"
+    "tsx": "^4.20.6",
+    "typescript": "^5.3.3"
   }
 }
-

@@ -64,6 +64,27 @@ Download from [ffmpeg.org](https://ffmpeg.org/download.html)
 
 ### Option 1: Docker (Recommended)
 
+**Using npm scripts (easiest):**
+
+```bash
+# Start SRS
+npm run srs:start
+
+# View logs
+npm run srs:logs
+
+# Stop SRS
+npm run srs:stop
+
+# Restart SRS
+npm run srs:restart
+
+# Remove container completely
+npm run srs:remove
+```
+
+**Or using Docker directly:**
+
 ```bash
 # Start SRS container
 docker run -d \
@@ -80,6 +101,8 @@ docker logs -f srs
 docker stop srs
 docker rm srs
 ```
+
+> 💡 See [SRS_SCRIPTS.md](./SRS_SCRIPTS.md) for detailed documentation on the SRS management scripts.
 
 ### Option 2: Native Installation
 

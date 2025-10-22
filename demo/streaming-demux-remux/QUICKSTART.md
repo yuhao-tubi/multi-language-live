@@ -15,7 +15,13 @@ ffmpeg -version
 
 ## Step 2: Start SRS
 
-Using Docker (easiest):
+Using npm script (easiest):
+
+```bash
+npm run srs:start
+```
+
+Or using Docker directly:
 
 ```bash
 docker run -d -p 1935:1935 -p 8080:8080 --name srs ossrs/srs:5
@@ -24,7 +30,8 @@ docker run -d -p 1935:1935 -p 8080:8080 --name srs ossrs/srs:5
 Verify SRS is running:
 
 ```bash
-docker logs srs
+npm run srs:logs
+# Or: docker logs srs
 ```
 
 You should see: "SRS server is ready"
@@ -123,7 +130,8 @@ ffmpeg -codecs | grep aac
 
 **To stop SRS:**
 ```bash
-docker stop srs
+npm run srs:stop
+# Or: docker stop srs
 ```
 
 ## Next Steps

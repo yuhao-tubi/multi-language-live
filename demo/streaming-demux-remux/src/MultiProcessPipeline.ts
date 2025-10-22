@@ -1,6 +1,6 @@
 import { ChildProcess } from 'child_process';
 import { Readable } from 'stream';
-import Parser from 'm3u8-parser';
+import * as M3U8Parser from 'm3u8-parser';
 import m3u8stream from 'm3u8stream';
 import { createDemuxProcess } from './processes/DemuxProcess.js';
 import { createDecodeProcess } from './processes/DecodeProcess.js';
@@ -72,7 +72,7 @@ export class MultiProcessPipeline {
       const manifestText = await manifestResponse.text();
 
       // Step 2: Parse manifest
-      const parser = new Parser();
+      const parser = new M3U8Parser.Parser();
       parser.push(manifestText);
       parser.end();
 
