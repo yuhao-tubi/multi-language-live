@@ -1,0 +1,82 @@
+{
+  "name": "streaming-demux-remux",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/streaming-demux-remux/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc",
+        "cwd": "apps/streaming-demux-remux"
+      },
+      "outputs": ["{projectRoot}/dist"]
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsx src/main.ts",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node dist/main.js",
+        "cwd": "apps/streaming-demux-remux"
+      },
+      "dependsOn": ["build"]
+    },
+    "verify": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/verify-setup.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "check": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "srs:start": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/start-srs.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "srs:stop": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/stop-srs.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "srs:restart": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/restart-srs.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "srs:remove": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/remove-srs.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    },
+    "srs:logs": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "bash scripts/logs-srs.sh",
+        "cwd": "apps/streaming-demux-remux"
+      }
+    }
+  },
+  "tags": ["type:application"]
+}
+

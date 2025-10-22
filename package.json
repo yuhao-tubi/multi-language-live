@@ -1,16 +1,19 @@
 {
   "name": "multi-language-live",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
+  "description": "Multi-language live streaming monorepo",
   "license": "ISC",
+  "scripts": {
+    "build": "nx build",
+    "dev": "nx dev streaming-demux-remux",
+    "start": "nx start streaming-demux-remux",
+    "test": "nx test"
+  },
+  "private": true,
   "devDependencies": {
+    "@nx/js": "^22.0.0",
     "@types/node": "^24.8.1",
+    "nx": "^22.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
