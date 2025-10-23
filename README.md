@@ -89,9 +89,16 @@ Multi-process HLS audio manipulation pipeline with SRS integration.
 
 ### mock-media-service
 
-Simple TypeScript Express server for mock media service API.
+WebSocket-based mock media service for real-time audio fragment streaming with bidirectional processing support.
 
-**Location:** `mock-media-service/`
+**Location:** `apps/mock-media-service/`
+
+**Key Features:**
+- Real-time audio fragment delivery via Socket.IO
+- Bidirectional workflow support (client can send processed fragments back)
+- Fragment acknowledgment tracking
+- Configurable timing and retry behavior
+- Multiple stream support
 
 **Run commands:**
 ```bash
@@ -105,7 +112,9 @@ nx build mock-media-service
 node dist/mock-media-service/main.js
 ```
 
-Protocol and functionalities to be defined.
+**Documentation:**
+- [Protocol Specification](apps/mock-media-service/PROTOCOL.md) - Complete WebSocket protocol documentation
+- [README](apps/mock-media-service/README.md) - Setup and usage guide
 
 ## Nx Workspace
 

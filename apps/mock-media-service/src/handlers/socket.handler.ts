@@ -38,6 +38,18 @@ export function setupSocketHandlers(socket: Socket, streamManager: StreamManager
     streamManager.handleAck(socket, fragmentId);
   });
 
+  // Handle processed fragment
+  socket.on('fragment:processed', (delivery: { fragment: any; data: Buffer }) => {
+    const { fragment, data } = delivery;
+    if (!fragment?.id || !data) {
+      socket.emit('error', { message: 'fragment and data are required' });
+      return;
+    }
+
+    console.log(`Received processed fragment ${fragment.id} from ${socket.id}, size: ${data.length} bytes`);
+    // Log for tracking/debugging purposes
+  });
+
   // Handle disconnect
   socket.on('disconnect', (reason: string) => {
     console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);

@@ -81,6 +81,27 @@ Acknowledge receipt of a fragment (optional but recommended).
 
 ---
 
+#### 4. `fragment:processed`
+Send a processed audio fragment back to the server (optional).
+
+**Payload:**
+```typescript
+{
+  fragment: AudioFragment;  // Original fragment metadata from server
+  data: Buffer;             // Processed audio data
+}
+```
+
+**Response:** None (logged for tracking/debugging)
+
+**Use Case:**
+- Client processes received fragment (e.g., transcoding, filtering, analysis)
+- Client sends processed result back to server with same structure as `fragment:data`
+- Server logs receipt for monitoring and debugging
+- Enables bidirectional audio processing workflows
+
+---
+
 ### Server → Client Events
 
 #### 1. `subscribed`
@@ -110,7 +131,6 @@ Delivers an audio fragment with metadata and binary data.
     codec: string;           // Audio codec (e.g., "aac")
     sampleRate: number;      // Sample rate (Hz, e.g., 44100)
     channels: number;        // Number of channels (1 = mono, 2 = stereo)
-    bitrate: number;         // Bitrate (bps)
     metadata?: {             // Optional metadata
       fileName: string;      // Original file name
       fileSize: number;      // File size in bytes
@@ -204,18 +224,34 @@ sequenceDiagram
     
     S->>C: fragment:data {0}
     C->>S: fragment:ack
+    opt Client Processing
+        Note over C: process fragment
+        C->>S: fragment:processed
+    end
     Note over S: wait FRAGMENT_DATA_INTERVAL
     
     S->>C: fragment:data {1}
     C->>S: fragment:ack
+    opt Client Processing
+        Note over C: process fragment
+        C->>S: fragment:processed
+    end
     Note over S: wait FRAGMENT_DATA_INTERVAL
     
     S->>C: fragment:data {2}
     C->>S: fragment:ack
+    opt Client Processing
+        Note over C: process fragment
+        C->>S: fragment:processed
+    end
     Note over S: wait FRAGMENT_DATA_INTERVAL
     
     S->>C: fragment:data {3}
     C->>S: fragment:ack
+    opt Client Processing
+        Note over C: process fragment
+        C->>S: fragment:processed
+    end
     
     S->>C: stream:complete
     S->>C: disconnect
@@ -277,6 +313,14 @@ stateDiagram-v2
 - If no ack within `ACK_TIMEOUT_MS`, counts as retry
 - After `MAX_RETRIES`, server logs warning but continues
 - Purpose: Reliability tracking, performance monitoring, debugging
+
+### Processed Fragment Upload
+
+**Optional feature for bidirectional workflows:**
+- Client can send `fragment:processed` to upload processed audio back to server
+- Useful for workflows like transcoding, audio filtering, or analysis results
+- Server logs receipt for monitoring and debugging purposes
+- Does not affect fragment delivery flow or stream lifecycle
 
 ## REST API Endpoints
 
@@ -393,6 +437,7 @@ The server handles errors gracefully:
 
 ## Version History
 
+- **v1.1** (2025-10-23): Added `fragment:processed` event for bidirectional audio workflows
 - **v1.0** (2025-10-23): Initial protocol specification
 
 ## References

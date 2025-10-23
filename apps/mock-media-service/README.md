@@ -82,6 +82,7 @@ For detailed protocol specification, message formats, flow diagrams, and impleme
 ```javascript
 socket.emit('subscribe', { streamId: 'test-stream' });
 socket.emit('fragment:ack', { fragmentId: 'test-stream-0' });
+socket.emit('fragment:processed', { fragment: { id: 'test-stream-0', ... }, data: processedBuffer });
 socket.emit('unsubscribe', { streamId: 'test-stream' });
 ```
 
@@ -106,6 +107,10 @@ socket.on('connect', () => {
 socket.on('fragment:data', ({ fragment, data }) => {
   console.log(`Fragment ${fragment.sequenceNumber}: ${data.length} bytes`);
   socket.emit('fragment:ack', { fragmentId: fragment.id });
+  
+  // Optional: send processed fragment back
+  const processedData = processAudio(data); // Your processing logic
+  socket.emit('fragment:processed', { fragment, data: processedData });
 });
 
 socket.on('stream:complete', () => {
@@ -125,7 +130,6 @@ interface AudioFragment {
   codec: string;           // "aac"
   sampleRate: number;      // Hz
   channels: number;        // Audio channels
-  bitrate: number;         // bps
   metadata?: {
     fileName: string;
     fileSize: number;
@@ -136,6 +140,8 @@ interface FragmentDelivery {
   fragment: AudioFragment;
   data: Buffer;  // m4s binary data
 }
+
+// Used for both fragment:data (server→client) and fragment:processed (client→server)
 ```
 
 ## Testing

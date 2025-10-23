@@ -7,7 +7,6 @@ export interface AudioFragment {
   codec: string;
   sampleRate: number;
   channels: number;
-  bitrate: number;
   metadata?: Record<string, any>;
 }
 

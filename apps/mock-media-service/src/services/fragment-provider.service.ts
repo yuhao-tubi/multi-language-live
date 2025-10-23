@@ -108,7 +108,6 @@ export class FragmentProvider extends EventEmitter {
         codec: 'aac',
         sampleRate: 44100,
         channels: 2,
-        bitrate: 256000,
         metadata: {
           fileName,
           fileSize: data.length
