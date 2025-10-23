@@ -10,3 +10,8 @@ output/
 .nx/workspace-data
 project-graph.html
 static/
+
+# Claude Code Sub-Agent Collective
+.claude/
+.claude-collective/
+.taskmaster/

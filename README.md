@@ -7,7 +7,8 @@ This is an Nx-powered monorepo for multi-language live streaming projects.
 ```
 multi-language-live/
 ├── apps/
-│   └── streaming-demux-remux/    # HLS audio manipulation pipeline with SRS integration
+│   ├── streaming-demux-remux/    # HLS audio manipulation pipeline with SRS integration
+│   └── mock-media-service/       # Mock media service (Express API)
 ├── libs/                          # Shared libraries (future)
 ├── nx.json                        # Nx configuration
 ├── tsconfig.base.json             # Base TypeScript configuration
@@ -26,10 +27,10 @@ multi-language-live/
 ### Installation
 
 ```bash
-# Install dependencies
+# Install all dependencies (root and workspace)
 npm install
 
-# Install app-specific dependencies
+# Install app-specific dependencies (if needed)
 cd apps/streaming-demux-remux && npm install
 ```
 
@@ -43,16 +44,15 @@ npm run build
 
 # Build specific app
 nx build streaming-demux-remux
+nx build mock-media-service
+
+# Serve an app in development mode
+nx serve mock-media-service
 
 # Run dev server for streaming-demux-remux
 npm run dev
 # or
 nx dev streaming-demux-remux
-
-# Start production build
-npm run start
-# or
-nx start streaming-demux-remux
 ```
 
 ### App-Specific Commands
@@ -86,6 +86,26 @@ Multi-process HLS audio manipulation pipeline with SRS integration.
 - [README](apps/streaming-demux-remux/README.md)
 - [Quick Start](apps/streaming-demux-remux/QUICKSTART.md)
 - [Implementation Summary](apps/streaming-demux-remux/IMPLEMENTATION_SUMMARY.md)
+
+### mock-media-service
+
+Simple TypeScript Express server for mock media service API.
+
+**Location:** `mock-media-service/`
+
+**Run commands:**
+```bash
+# Development mode with watch
+nx serve mock-media-service
+
+# Build
+nx build mock-media-service
+
+# Production mode
+node dist/mock-media-service/main.js
+```
+
+Protocol and functionalities to be defined.
 
 ## Nx Workspace
 

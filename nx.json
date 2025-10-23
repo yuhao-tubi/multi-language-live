@@ -10,6 +10,11 @@
     },
     "lint": {
       "cache": true
+    },
+    "@nx/esbuild:esbuild": {
+      "cache": true,
+      "dependsOn": ["^build"],
+      "inputs": ["production", "^production"]
     }
   },
   "defaultBase": "main",
@@ -26,4 +31,3 @@
   "parallel": 1,
   "cacheDirectory": ".nx/cache"
 }
-
