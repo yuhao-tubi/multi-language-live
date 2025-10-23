@@ -36,3 +36,6 @@ dependencies:
       - langdetect
       - inflect
       - sentencepiece
+      
+      # Socket.IO client for live streaming
+      - python-socketio[client]
