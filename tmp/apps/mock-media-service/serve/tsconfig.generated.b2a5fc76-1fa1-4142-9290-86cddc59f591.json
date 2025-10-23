@@ -1,0 +1,6 @@
+{
+  "compilerOptions": {
+    "paths": {}
+  },
+  "extends": "../../../../apps/mock-media-service/tsconfig.app.json"
+}

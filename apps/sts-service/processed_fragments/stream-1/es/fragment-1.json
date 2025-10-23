@@ -2,12 +2,12 @@
   "fragment_id": "stream-1-1",
   "sequence_number": 1,
   "target_language": "es",
-  "processed_at": 1761249672.248592,
+  "processed_at": 1761256838.3502269,
   "original_metadata": {
     "id": "stream-1-1",
     "streamId": "stream-1",
     "sequenceNumber": 1,
-    "timestamp": 1761249623652,
+    "timestamp": 1761256836636,
     "duration": 15000,
     "codec": "aac",
     "sampleRate": 44100,
@@ -17,5 +17,5 @@
       "fileSize": 244343
     }
   },
-  "file_size": 188003
+  "file_size": 159125
 }

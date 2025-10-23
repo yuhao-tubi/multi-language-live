@@ -44,6 +44,9 @@ from talk_multi_coqui import (
     load_cfg
 )
 
+# Import audio utilities
+from utils.audio_normalization import get_audio_duration
+
 # Import audio streaming utilities
 from utils.transcription import (
     get_whisper_model,
@@ -79,6 +82,7 @@ class LiveStreamProcessor:
         self.fragment_count = 0
         self.processed_count = 0
         self.failed_count = 0
+        self.total_fragments_expected = 0
         
         # Pre-loaded models
         self.whisper_model = None
@@ -91,6 +95,10 @@ class LiveStreamProcessor:
         # Processing queue for async processing
         self.processing_queue = queue.Queue()
         self.processing_thread = None
+        
+        # Store processed audio fragments for combining at the end
+        self.processed_audio_fragments: List[np.ndarray] = []
+        self.processed_sample_rate = None
         
         # Setup output directory if saving locally
         if self.save_local:
@@ -163,7 +171,10 @@ class LiveStreamProcessor:
             self._wait_for_processing_complete()
             
             # Disconnect
-            self.sio.disconnect()
+            try:
+                self.sio.disconnect()
+            except Exception as e:
+                print(f"Warning: Error during disconnect: {e}")
         
         @self.sio.on('error')
         def error(error_data):
@@ -173,23 +184,40 @@ class LiveStreamProcessor:
         
         @self.sio.on('disconnect')
         def disconnect():
-            print(f"✓ Disconnected from server")
+            if self.connected:  # Only print once
+                print(f"✓ Disconnected from server")
             self.connected = False
-            self.running = False
+            # Don't set self.running = False here - let processing continue
     
     def _wait_for_processing_complete(self):
         """Wait for all fragments to be processed"""
         print("Waiting for processing to complete...")
         
         # Wait for processing queue to empty
-        timeout = 30  # 30 second timeout
+        timeout = 60  # 60 second timeout (increased from 30)
         start_time = time.time()
         
         while not self.processing_queue.empty():
             if time.time() - start_time > timeout:
-                print("ERROR: Timeout waiting for processing to complete")
+                print("ERROR: Timeout waiting for processing queue to empty")
                 break
             time.sleep(0.1)
+        
+        # Wait for all fragments to actually be processed
+        total_expected = self.fragment_count
+        print(f"Waiting for {total_expected} fragments to complete processing...")
+        while (self.processed_count + self.failed_count) < total_expected:
+            if time.time() - start_time > timeout:
+                print(f"ERROR: Timeout waiting for processing to complete. Expected: {total_expected}, Processed: {self.processed_count}, Failed: {self.failed_count}")
+                print(f"Queue size: {self.processing_queue.qsize()}")
+                break
+            print(f"Waiting... Processed: {self.processed_count}, Failed: {self.failed_count}, Expected: {total_expected}, Queue: {self.processing_queue.qsize()}")
+            time.sleep(1)
+        
+        # Wait for processing thread to finish current work
+        if self.processing_thread and self.processing_thread.is_alive():
+            print("Waiting for processing thread to finish...")
+            self.processing_thread.join(timeout=30)  # Wait up to 30 more seconds
         
         print("✓ Processing complete!")
     
@@ -419,6 +447,12 @@ class LiveStreamProcessor:
             
             print(f"Whisper returned {len(segments)} segments")
             
+            # Calculate speech rate from original audio
+            original_duration = len(audio_data) / sample_rate
+            total_words = sum(len(seg[2].split()) for seg in segments)
+            speech_rate = total_words / original_duration if original_duration > 0 else 0
+            print(f"Original speech rate: {speech_rate:.1f} words/second ({total_words} words in {original_duration:.2f}s)")
+            
             # Filter segments to only include those within the expected fragment duration
             expected_duration_seconds = duration  # duration is already in seconds
             filtered_segments = []
@@ -490,17 +524,49 @@ class LiveStreamProcessor:
                     self.voices, target_lang, speaker
                 )
                 
-                tts_key = sha1("TTS", mt_res["out"], target_lang, model_name, str(tts_speaker))
+                # Use the same approach as talk_multi_coqui.py: synthesize at normal speed, then post-process
+                # This is more effective than trying to use XTTS speed parameter alone
+                original_duration = len(audio_data) / sample_rate
+                translated_text = mt_res["out"]
+                
+                print(f"Using post-processing speed adjustment approach:")
+                print(f"  Original duration: {original_duration:.1f}s")
+                print(f"  Target duration: {original_duration:.1f}s")
+                
+                
+                # Include speed in cache key
+                tts_key = sha1("TTS", mt_res["out"], target_lang, model_name, str(tts_speaker), "post_process")
                 wav_path = CACHE_DIR / f"{tts_key}.wav"
                 
                 if self.args.no_cache or not wav_path.exists():
-                    wav_path = synth_to_wav(
+                    # First synthesize at normal speed
+                    temp_wav = synth_to_wav(
                         mt_res["out"], 
                         model_name, 
                         speaker=tts_speaker, 
                         target_language=target_lang, 
-                        voice_sample_path=voice_sample
+                        voice_sample_path=voice_sample,
+                        speed=1.0  # Always synthesize at normal speed
                     )
+                    
+                    # Get baseline duration by loading the audio file
+                    import soundfile as sf
+                    temp_audio, temp_sample_rate = sf.read(str(temp_wav), dtype="float32")
+                    baseline_duration = get_audio_duration(temp_audio, temp_sample_rate)
+                    print(f"  Baseline TTS duration: {baseline_duration:.2f}s")
+                    
+                    # Calculate required speed to match original duration
+                    required_speed = baseline_duration / original_duration
+                    # Clamp speed to reasonable range (0.5x to 3.0x)
+                    required_speed = max(0.5, min(3.0, required_speed))
+                    
+                    print(f"  Required speed adjustment: {required_speed:.2f}x")
+                    
+                    # Apply speed adjustment via post-processing using Rubber Band
+                    wav_path = self._adjust_audio_speed(temp_wav, wav_path, required_speed)
+                    
+                    # Clean up temp file
+                    Path(temp_wav).unlink()
                     
                     if not self.args.no_cache:
                         tmp = wav_path
@@ -522,6 +588,25 @@ class LiveStreamProcessor:
                         orig_sr=tts_sample_rate, 
                         target_sr=sample_rate
                     )
+                
+                # Use audio at its natural length (no duration normalization)
+                final_duration = get_audio_duration(synthesized_audio, sample_rate)
+                print(f"TTS audio duration: {final_duration:.2f}s (natural length)")
+                
+                # Store processed audio fragment for combining at the end
+                self.processed_audio_fragments.append(synthesized_audio.copy())
+                if self.processed_sample_rate is None:
+                    self.processed_sample_rate = sample_rate
+                
+                # Save individual processed audio chunk for verification
+                chunk_filename = f"processed_chunk_{fragment['sequenceNumber']:03d}_{target_lang}.wav"
+                chunk_path = self.output_dir / self.stream_id / target_lang / chunk_filename
+                chunk_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                import soundfile as sf
+                sf.write(str(chunk_path), synthesized_audio, sample_rate)
+                print(f"💾 Saved individual chunk: {chunk_path}")
+                print(f"   Duration: {final_duration:.2f}s, Samples: {len(synthesized_audio)}")
                 
                 # Convert back to int16 format and encode as m4s container
                 processed_audio = (synthesized_audio * 32767).astype(np.int16)
@@ -620,24 +705,112 @@ class LiveStreamProcessor:
                 
                 if processed_data is not None:
                     # Send processed fragment back to server
-                    self.sio.emit('fragment:processed', {
-                        'fragment': fragment,
-                        'data': processed_data
-                    })
-                    print(f"✓ Sent processed fragment {fragment['sequenceNumber']}")
-                    self.processed_count += 1
+                    try:
+                        self.sio.emit('fragment:processed', {
+                            'fragment': fragment,
+                            'data': processed_data
+                        })
+                        print(f"✓ Sent processed fragment {fragment['sequenceNumber']}")
+                        self.processed_count += 1
+                    except Exception as e:
+                        print(f"ERROR: Failed to send processed fragment: {e}")
+                        self.failed_count += 1
                 else:
                     print(f"✗ Failed to process fragment {fragment['sequenceNumber']}")
                     self.failed_count += 1
                 
+                # Debug: Show processing status
+                print(f"Fragment {fragment['sequenceNumber']} completed. Queue: {self.processing_queue.qsize()}, Processed: {self.processed_count}, Failed: {self.failed_count}, Expected: {self.fragment_count}")
+                
                 print()  # Empty line between fragments
                 
             except queue.Empty:
+                # Check if we should stop (no more fragments expected and queue is empty)
+                print(f"Queue empty timeout - Connected: {self.connected}, Queue size: {self.processing_queue.qsize()}")
+                if not self.connected and self.processing_queue.empty():
+                    # Double-check: make sure we've processed all expected fragments
+                    if (self.processed_count + self.failed_count) >= self.fragment_count and self.fragment_count > 0:
+                        print(f"All fragments processed ({self.processed_count + self.failed_count}/{self.fragment_count}), stopping worker")
+                        break
+                    else:
+                        print(f"Queue empty but not all fragments processed ({self.processed_count + self.failed_count}/{self.fragment_count}), continuing...")
+                        # Wait a bit longer for remaining fragments to be processed
+                        time.sleep(2)
                 continue
             except Exception as e:
                 print(f"ERROR: Processing worker error: {e}")
         
         print("Processing worker stopped")
+    
+    def _adjust_audio_speed(self, input_path: Path, output_path: Path, speed_factor: float) -> Path:
+        """
+        Adjust audio speed using rubberband for high quality while preserving pitch
+        
+        Args:
+            input_path: Path to input audio file
+            output_path: Path to save adjusted audio
+            speed_factor: Speed multiplier (1.0 = normal, 2.0 = double speed, 0.5 = half speed)
+        
+        Returns:
+            Path to the adjusted audio file
+        """
+        import subprocess
+        
+        # Use rubberband for high-quality time stretching
+        cmd = [
+            "rubberband",
+            "-T", str(speed_factor),  # Tempo change (1/speed_factor for time stretch)
+            "-p", "0",                # Keep pitch unchanged (0 semitones)
+            "-F",                     # Enable formant preservation
+            "-3",                     # Use R3 (finer) engine for best quality
+            str(input_path),
+            str(output_path)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"Warning: rubberband failed: {result.stderr}")
+            print("Falling back to copying original file")
+            # Fallback: just copy the original file
+            import shutil
+            shutil.copy2(input_path, output_path)
+        
+        return output_path
+    
+    def _combine_and_save_processed_audio(self):
+        """Combine all processed audio fragments into a single WAV file"""
+        if not self.processed_audio_fragments:
+            print("No processed audio fragments to combine")
+            return
+        
+        print(f"\n🎵 Combining {len(self.processed_audio_fragments)} processed audio fragments...")
+        
+        try:
+            # Combine all audio fragments
+            combined_audio = np.concatenate(self.processed_audio_fragments)
+            total_duration = len(combined_audio) / self.processed_sample_rate
+            
+            print(f"Combined audio: {len(combined_audio)} samples, {total_duration:.2f}s at {self.processed_sample_rate}Hz")
+            
+            # Save as WAV file
+            output_filename = f"combined_processed_audio_natural_{self.stream_id}_{int(time.time())}.wav"
+            output_path = self.output_dir / output_filename
+            
+            # Ensure output directory exists
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Save the combined audio
+            import soundfile as sf
+            sf.write(str(output_path), combined_audio, self.processed_sample_rate)
+            
+            print(f"✅ Combined audio saved: {output_path}")
+            print(f"   Duration: {total_duration:.2f}s")
+            print(f"   Sample rate: {self.processed_sample_rate}Hz")
+            print(f"   Channels: {combined_audio.shape[1] if len(combined_audio.shape) > 1 else 1}")
+            
+        except Exception as e:
+            print(f"❌ Error combining audio fragments: {e}")
     
     def run(self):
         """Main run method"""
@@ -685,8 +858,14 @@ class LiveStreamProcessor:
         if self.processing_thread:
             self.processing_thread.join()
         
+        # Combine and save all processed audio fragments
+        self._combine_and_save_processed_audio()
+        
         if self.connected:
-            self.sio.disconnect()
+            try:
+                self.sio.disconnect()
+            except Exception as e:
+                print(f"Warning: Error during disconnect: {e}")
         
         print("✓ Cleanup complete")
 
