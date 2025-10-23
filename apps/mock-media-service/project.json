@@ -15,7 +15,13 @@
         "bundle": false,
         "main": "apps/mock-media-service/src/main.ts",
         "tsConfig": "apps/mock-media-service/tsconfig.app.json",
-        "assets": ["apps/mock-media-service/src/assets"],
+        "assets": [
+          {
+            "input": "apps/mock-media-service/src/assets",
+            "glob": "**/*",
+            "output": "assets"
+          }
+        ],
         "generatePackageJson": true,
         "esbuildOptions": {
           "sourcemap": true,
