@@ -1,0 +1,21 @@
+{
+  "fragment_id": "stream-1-3",
+  "sequence_number": 3,
+  "target_language": "es",
+  "processed_at": 1761259813.452802,
+  "original_metadata": {
+    "id": "stream-1-3",
+    "streamId": "stream-1",
+    "sequenceNumber": 3,
+    "timestamp": 1761259800579,
+    "duration": 15000,
+    "codec": "aac",
+    "sampleRate": 44100,
+    "channels": 2,
+    "metadata": {
+      "fileName": "fragment-3.m4s",
+      "fileSize": 244487
+    }
+  },
+  "file_size": 132467
+}

@@ -322,7 +322,7 @@ def get_tts(model_name: str) -> CoquiTTS:
                 raise e
     return _tts_cache[model_name]
 
-def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str = 'es', voice_sample_path: str = None) -> Path:
+def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str = 'es', voice_sample_path: str = None, speed: float = 1.0) -> Path:
     """
     Synthesize text to WAV file with optional voice cloning
     
@@ -332,6 +332,7 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
         speaker: Speaker ID (optional)
         target_language: Target language code
         voice_sample_path: Path to voice sample for cloning (optional)
+        speed: Speech speed multiplier (1.0 = normal, >1.0 = faster, <1.0 = slower)
         
     Returns:
         Path to generated WAV file
@@ -353,13 +354,14 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
                     text=processed_text, 
                     file_path=str(wav), 
                     speaker_wav=voice_sample_path,
-                    language=target_language
+                    language=target_language,
+                    speed=speed
                 )
             else:
                 # Use default speaker voice
-                tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker, language=target_language)
+                tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker, language=target_language, speed=speed)
         else:
-            tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker)
+            tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker, speed=speed)
     else:
         # For multilingual models like XTTS v2, pass language parameter
         if "xtts" in model_name.lower():
@@ -370,12 +372,14 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
                     text=processed_text, 
                     file_path=str(wav), 
                     speaker_wav=voice_sample_path,
-                    language=target_language
+                    language=target_language,
+                    speed=speed
                 )
             else:
-                tts.tts_to_file(text=processed_text, file_path=str(wav), language=target_language)
+                tts.tts_to_file(text=processed_text, file_path=str(wav), language=target_language, speed=speed)
         else:
-            tts.tts_to_file(text=processed_text, file_path=str(wav))
+            tts.tts_to_file(text=processed_text, file_path=str(wav), speed=speed)
+    
     return wav
 
 # =============================================================================

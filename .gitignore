@@ -54,3 +54,4 @@ environment.yml.bak
 # Caches
 apps/sts-service/__pycache__/
 apps/sts-service/.cache_coqui/
+apps/sts-service/processed_fragments/
