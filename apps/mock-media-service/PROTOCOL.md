@@ -102,6 +102,34 @@ Send a processed audio fragment back to the server (optional).
 
 ---
 
+#### 5. `stream:remux`
+Trigger server-side remux: replace the original audio in the source video with the processed audio fragments saved in output.
+
+**Payload:**
+```typescript
+{
+  streamId: string  // Stream identifier (maps to videos/{streamId}.mp4)
+}
+```
+
+**Response:** `stream:remux:complete` on success, `error` on failure
+
+---
+
+#### 6. `output:clean`
+Delete processed audio fragments from the output directory.
+
+**Payload:**
+```typescript
+{
+  streamId?: string  // Optional: when provided, clean only this stream's output
+}
+```
+
+**Response:** `output:clean:complete` with list of removed directories
+
+---
+
 ### Server → Client Events
 
 #### 1. `subscribed`
@@ -437,6 +465,7 @@ The server handles errors gracefully:
 
 ## Version History
 
+- **v1.2** (2025-10-23): Added `stream:remux` and `output:clean` events and corresponding completions
 - **v1.1** (2025-10-23): Added `fragment:processed` event for bidirectional audio workflows
 - **v1.0** (2025-10-23): Initial protocol specification
 

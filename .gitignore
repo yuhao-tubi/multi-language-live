@@ -38,6 +38,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+condaenv.*.requirements.txt
 
 # Virtual environments
 .env

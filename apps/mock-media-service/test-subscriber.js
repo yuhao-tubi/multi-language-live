@@ -26,6 +26,7 @@ const PORT = process.env.PORT || 4000;
 const SERVER_URL = `ws://${HOST}:${PORT}`;
 const STREAM_ID = process.argv[2] || process.env.STREAM_ID || 'test-stream';
 const SAVE_FRAGMENTS = process.env.SAVE_FRAGMENTS === 'true';
+const EXPECTED_FRAGMENTS = Number(process.env.MAX_FRAGMENTS_PER_STREAM || 4);
 
 // Metrics tracking
 const metrics = {
@@ -77,7 +78,7 @@ log(colors.blue, '[CONFIG]', 'Client Configuration:');
 console.log(`  ${colors.cyan}Server URL:${colors.reset} ${SERVER_URL}`);
 console.log(`  ${colors.cyan}Stream ID:${colors.reset} ${STREAM_ID}`);
 console.log(`  ${colors.cyan}Save Fragments:${colors.reset} ${SAVE_FRAGMENTS}`);
-console.log(`  ${colors.cyan}Expected Fragments:${colors.reset} ${process.env.MAX_FRAGMENTS_PER_STREAM || 4}`);
+  console.log(`  ${colors.cyan}Expected Fragments:${colors.reset} ${EXPECTED_FRAGMENTS}`);
 
 // Check .env file exists
 const envPath = path.join(__dirname, '.env');
@@ -100,9 +101,30 @@ log(colors.blue, '[CONNECT]', 'Initiating connection to server...', {
 // Create Socket.IO client
 const socket = io(SERVER_URL, {
   transports: ['websocket'],
-  reconnection: false,
+  reconnection: true,
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
   timeout: 10000
 });
+
+// Post-stream actions state
+const postActions = {
+  streamComplete: false,
+  remuxRequested: false,
+  cleaned: false
+};
+const ackedIds = new Set();
+
+function maybeRequestRemux() {
+  // Only request remux after stream complete AND all expected fragments acked
+  if (!postActions.streamComplete) return;
+  if (ackedIds.size < EXPECTED_FRAGMENTS) return;
+  if (postActions.remuxRequested) return;
+  if (!socket.connected) return;
+  log(colors.blue, '[REMUX]', `Requesting server-side remux for stream: ${STREAM_ID} (acked=${ackedIds.size}/${EXPECTED_FRAGMENTS})`);
+  socket.emit('stream:remux', { streamId: STREAM_ID });
+  postActions.remuxRequested = true;
+}
 
 // Connection successful
 socket.on('connect', () => {
@@ -230,6 +252,21 @@ socket.on('fragment:data', (delivery) => {
     fragmentId: fragment.id,
     ackLatency: `${Date.now() - ackSendTime}ms`
   });
+  ackedIds.add(fragment.id);
+
+  // Send processed fragment back to server (echo) to exercise server-side saving
+  try {
+    socket.emit('fragment:processed', { fragment, data });
+    log(colors.cyan, '[UPLOAD]', 'Processed fragment sent back to server for saving', {
+      id: fragment.id,
+      fileName: fragment?.metadata?.fileName
+    });
+  } catch (e) {
+    log(colors.red, '[ERROR]', 'Failed to send processed fragment', { error: String(e) });
+  }
+
+  // If stream already marked complete and we now have all acks, request remux
+  maybeRequestRemux();
 });
 
 // Stream complete
@@ -273,6 +310,29 @@ socket.on('stream:complete', (data) => {
   }
   
   log(colors.yellow, '[INFO]', 'Server will disconnect socket shortly...');
+
+  // Mark completion; remux will be requested only after all expected acks are recorded
+  postActions.streamComplete = true;
+  maybeRequestRemux();
+});
+
+// Remux completed
+socket.on('stream:remux:complete', ({ streamId, outputVideo }) => {
+  logSection('Remux Completed');
+  log(colors.green, '[SUCCESS]', 'Remux finished', { streamId, outputVideo });
+  if (!postActions.cleaned) {
+    log(colors.blue, '[CLEAN]', `Requesting output cleanup for stream: ${STREAM_ID}`);
+    socket.emit('output:clean', { streamId: STREAM_ID });
+    postActions.cleaned = true;
+  }
+});
+
+// Output cleaned
+socket.on('output:clean:complete', ({ removed }) => {
+  logSection('Output Cleaned');
+  log(colors.green, '[SUCCESS]', 'Cleanup finished', { removed });
+  // Gracefully close after post actions
+  socket.disconnect();
 });
 
 // Unsubscribed
@@ -303,8 +363,25 @@ socket.on('disconnect', (reason) => {
     totalConnectionTime: `${metrics.disconnectTime - metrics.connectionEstablishedTime}ms`
   });
   
+  // If we still need to run post actions, allow reconnection
+  if (postActions.streamComplete && !postActions.cleaned) {
+    log(colors.yellow, '[RECONNECT]', 'Waiting for automatic reconnection to request remux...');
+    return; // Do not exit; reconnection is enabled
+  }
+
   printFinalSummary();
   process.exit(0);
+});
+
+// On reconnect, if we still need to run post actions, request remux
+socket.io.on('reconnect', () => {
+  log(colors.green, '[RECONNECTED]', 'Socket reconnected, resuming post-stream actions');
+  maybeRequestRemux();
+});
+
+socket.on('connect', () => {
+  // If connected (including after reconnect) and post actions pending, request remux
+  maybeRequestRemux();
 });
 
 // Connection error

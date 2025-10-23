@@ -6,6 +6,7 @@ import * as path from 'path';
 import { FragmentProvider } from './services/fragment-provider.service';
 import { StreamManager } from './services/stream-manager.service';
 import { setupSocketHandlers } from './handlers/socket.handler';
+import { MediaOutputService } from './services/media-output.service';
 
 // Load environment variables
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -58,6 +59,9 @@ const fragmentsPath = process.env.ASSETS_PATH
   ? path.resolve(process.env.ASSETS_PATH)
   : path.join(workspaceRoot, 'apps', 'mock-media-service', 'src', 'assets', 'audio-fragments');
 
+const videosPath = path.join(workspaceRoot, 'apps', 'mock-media-service', 'src', 'assets', 'videos');
+const outputBasePath = path.join(workspaceRoot, 'apps', 'mock-media-service', 'src', 'assets', 'output');
+
 const fragmentProvider = new FragmentProvider(
   fragmentsPath,
   fragmentDataInterval,
@@ -70,6 +74,8 @@ const streamManager = new StreamManager(
   ackTimeoutMs,
   maxRetries
 );
+
+const mediaOutput = new MediaOutputService(outputBasePath, videosPath);
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -95,7 +101,7 @@ app.get('/streams', async (req, res) => {
 
 // Socket.IO connection handler
 io.on('connection', (socket) => {
-  setupSocketHandlers(socket, streamManager);
+  setupSocketHandlers(socket, streamManager, mediaOutput);
 });
 
 // Start server
@@ -104,6 +110,8 @@ httpServer.listen(port, host, () => {
   console.log(`  HTTP: http://${host}:${port}`);
   console.log(`  WebSocket: ws://${host}:${port}`);
   console.log(`  Fragments path: ${fragmentsPath}\n`);
+  console.log(`  Videos path: ${videosPath}`);
+  console.log(`  Output base: ${outputBasePath}\n`);
 });
 
 // Graceful shutdown

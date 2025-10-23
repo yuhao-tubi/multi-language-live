@@ -1,7 +1,8 @@
 import { Socket } from 'socket.io';
 import { StreamManager } from '../services/stream-manager.service';
+import { MediaOutputService } from '../services/media-output.service';
 
-export function setupSocketHandlers(socket: Socket, streamManager: StreamManager): void {
+export function setupSocketHandlers(socket: Socket, streamManager: StreamManager, mediaOutput?: MediaOutputService): void {
   console.log(`Client connected: ${socket.id}`);
 
   // Handle subscribe event
@@ -39,15 +40,54 @@ export function setupSocketHandlers(socket: Socket, streamManager: StreamManager
   });
 
   // Handle processed fragment
-  socket.on('fragment:processed', (delivery: { fragment: any; data: Buffer }) => {
+  socket.on('fragment:processed', async (delivery: { fragment: any; data: Buffer }) => {
     const { fragment, data } = delivery;
     if (!fragment?.id || !data) {
       socket.emit('error', { message: 'fragment and data are required' });
       return;
     }
+    try {
+      if (mediaOutput) {
+        const savedPath = await mediaOutput.saveProcessedFragment(fragment, data);
+        console.log(`Saved processed fragment ${fragment.id} to ${savedPath}`);
+      }
+      console.log(`Received processed fragment ${fragment.id} from ${socket.id}, size: ${data.length} bytes`);
+    } catch (e) {
+      socket.emit('error', { message: 'Failed to save processed fragment', error: e instanceof Error ? e.message : String(e) });
+    }
+  });
 
-    console.log(`Received processed fragment ${fragment.id} from ${socket.id}, size: ${data.length} bytes`);
-    // Log for tracking/debugging purposes
+  // Handle stream remux
+  socket.on('stream:remux', async (data: { streamId: string }) => {
+    const { streamId } = data || {} as any;
+    if (!streamId) {
+      socket.emit('error', { message: 'streamId is required' });
+      return;
+    }
+    if (!mediaOutput) {
+      socket.emit('error', { message: 'Media output service unavailable' });
+      return;
+    }
+    try {
+      const { outputVideoPath } = await mediaOutput.remuxStream(streamId);
+      socket.emit('stream:remux:complete', { streamId, outputVideo: outputVideoPath });
+    } catch (e) {
+      socket.emit('error', { message: 'Remux failed', streamId, error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  // Handle output clean
+  socket.on('output:clean', async (data: { streamId?: string } = {}) => {
+    if (!mediaOutput) {
+      socket.emit('error', { message: 'Media output service unavailable' });
+      return;
+    }
+    try {
+      const removed = await mediaOutput.cleanOutput(data.streamId);
+      socket.emit('output:clean:complete', { removed });
+    } catch (e) {
+      socket.emit('error', { message: 'Cleanup failed', error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   // Handle disconnect
