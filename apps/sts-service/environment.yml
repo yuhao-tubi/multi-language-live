@@ -1,0 +1,38 @@
+name: multilingual-tts
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+
+dependencies:
+  # Core Python packages
+  - python=3.10
+
+  # Machine Learning and NLP
+  - pytorch
+  - torchaudio
+  - transformers>=4.33.0,<4.41.0  # Compatible range for Coqui TTS 0.24–0.27
+
+  # Configuration and utilities
+  - pyyaml
+  - rich
+
+  # Development and testing
+  - pip
+
+  # Pip-only packages (not available in conda)
+  - pip:
+      - coqui-tts==0.24.1
+      
+      # Audio & speech utilities
+      - sounddevice
+      - soundfile
+      - librosa
+      - pydub
+      - ffmpeg-python
+      
+      # Whisper integration and language utilities
+      - faster-whisper
+      - langdetect
+      - inflect
+      - sentencepiece
