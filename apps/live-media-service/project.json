@@ -1,0 +1,40 @@
+{
+  "name": "live-media-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/live-media-service/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/live-media-service",
+        "main": "apps/live-media-service/src/main.ts",
+        "tsConfig": "apps/live-media-service/tsconfig.json",
+        "assets": [
+          {
+            "input": "apps/live-media-service/public",
+            "glob": "**/*",
+            "output": "public"
+          }
+        ]
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "live-media-service:build",
+        "watch": true
+      }
+    },
+    "test": {
+      "executor": "@nx/vite:test",
+      "options": {
+        "configFile": "apps/live-media-service/vitest.config.ts"
+      }
+    }
+  },
+  "tags": []
+}
+

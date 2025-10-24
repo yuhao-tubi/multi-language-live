@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Media Service - Control Panel</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      color: #333;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #555;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.3s;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5568d3;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status-panel {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .status-item {
+      background: #f7fafc;
+      padding: 16px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .status-label {
+      font-size: 0.875rem;
+      color: #666;
+      margin-bottom: 4px;
+    }
+
+    .status-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #333;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      font-weight: 600;
+    }
+
+    .status-idle {
+      background: #e5e7eb;
+      color: #6b7280;
+    }
+
+    .status-running {
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    .status-error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .log-viewer {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 16px;
+      border-radius: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 0.875rem;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid #334155;
+    }
+
+    .alert {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .alert-info {
+      background: #dbeafe;
+      color: #1e40af;
+      border-left: 4px solid #3b82f6;
+    }
+
+    .alert-error {
+      background: #fee2e2;
+      color: #991b1b;
+      border-left: 4px solid #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <h1>🎥 Live Media Service</h1>
+      <p>Real-time HLS stream processing with audio manipulation</p>
+    </div>
+
+    <!-- Status Panel -->
+    <div class="card">
+      <h2>Pipeline Status</h2>
+      <div class="status-panel">
+        <div class="status-item">
+          <div class="status-label">Status</div>
+          <div class="status-value">
+            <span id="pipeline-status" class="status-badge status-idle">Idle</span>
+          </div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Phase</div>
+          <div class="status-value" id="pipeline-phase">-</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Uptime</div>
+          <div class="status-value" id="pipeline-uptime">0s</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Segments Fetched</div>
+          <div class="status-value" id="stats-segments">0</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Batches Processed</div>
+          <div class="status-value" id="stats-batches">0</div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Fragments Published</div>
+          <div class="status-value" id="stats-published">0</div>
+        </div>
+      </div>
+      <div id="error-alert" class="alert alert-error" style="display: none;">
+        <strong>Error:</strong> <span id="error-message"></span>
+      </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="card">
+      <h2>Pipeline Control</h2>
+      <form id="config-form">
+        <div class="form-group">
+          <label for="source-url">HLS Source URL *</label>
+          <input
+            type="text"
+            id="source-url"
+            placeholder="https://example.com/stream.m3u8"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="stream-id">Stream ID *</label>
+          <input
+            type="text"
+            id="stream-id"
+            placeholder="my-stream"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="buffer-duration">Buffer Duration (seconds)</label>
+          <input
+            type="number"
+            id="buffer-duration"
+            placeholder="30"
+            value="30"
+          />
+        </div>
+        <div class="form-group">
+          <label for="audio-processor-url">Audio Processor URL</label>
+          <input
+            type="text"
+            id="audio-processor-url"
+            placeholder="http://localhost:5000"
+            value="http://localhost:5000"
+          />
+        </div>
+        <div class="button-group">
+          <button type="submit" class="btn btn-primary" id="start-btn">
+            ▶️ Start Pipeline
+          </button>
+          <button type="button" class="btn btn-danger" id="stop-btn" disabled>
+            ⏹️ Stop Pipeline
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Logs -->
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="log-viewer" id="logs">
+        <div class="log-entry">Waiting for pipeline to start...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '/api';
+    let isRunning = false;
+    let statusInterval = null;
+
+    // Get form elements
+    const form = document.getElementById('config-form');
+    const startBtn = document.getElementById('start-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const sourceUrlInput = document.getElementById('source-url');
+    const streamIdInput = document.getElementById('stream-id');
+    const bufferDurationInput = document.getElementById('buffer-duration');
+    const audioProcessorUrlInput = document.getElementById('audio-processor-url');
+
+    // Get status elements
+    const pipelineStatus = document.getElementById('pipeline-status');
+    const pipelinePhase = document.getElementById('pipeline-phase');
+    const pipelineUptime = document.getElementById('pipeline-uptime');
+    const statsSegments = document.getElementById('stats-segments');
+    const statsBatches = document.getElementById('stats-batches');
+    const statsPublished = document.getElementById('stats-published');
+    const errorAlert = document.getElementById('error-alert');
+    const errorMessage = document.getElementById('error-message');
+    const logs = document.getElementById('logs');
+
+    // Load default values from environment or config
+    sourceUrlInput.value = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+    streamIdInput.value = 'test-stream';
+
+    // Start pipeline
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const config = {
+        sourceUrl: sourceUrlInput.value,
+        streamId: streamIdInput.value,
+        bufferDuration: parseInt(bufferDurationInput.value),
+        audioProcessorUrl: audioProcessorUrlInput.value,
+      };
+
+      try {
+        startBtn.disabled = true;
+        startBtn.textContent = '⏳ Starting...';
+        addLog('info', 'Starting pipeline...');
+
+        const response = await fetch(`${API_BASE}/pipeline/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          isRunning = true;
+          startBtn.textContent = '▶️ Start Pipeline';
+          stopBtn.disabled = false;
+          form.querySelectorAll('input').forEach(input => input.disabled = true);
+          addLog('success', 'Pipeline started successfully!');
+          startStatusPolling();
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (error) {
+        addLog('error', `Failed to start: ${error.message}`);
+        showError(error.message);
+        startBtn.disabled = false;
+        startBtn.textContent = '▶️ Start Pipeline';
+      }
+    });
+
+    // Stop pipeline
+    stopBtn.addEventListener('click', async () => {
+      try {
+        stopBtn.disabled = true;
+        stopBtn.textContent = '⏳ Stopping...';
+        addLog('info', 'Stopping pipeline...');
+
+        const response = await fetch(`${API_BASE}/pipeline/stop`, {
+          method: 'POST',
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          isRunning = false;
+          startBtn.disabled = false;
+          stopBtn.disabled = true;
+          stopBtn.textContent = '⏹️ Stop Pipeline';
+          form.querySelectorAll('input').forEach(input => input.disabled = false);
+          addLog('success', 'Pipeline stopped');
+          stopStatusPolling();
+          updateStatus({
+            isRunning: false,
+            phase: 'idle',
+            stats: { segmentsFetched: 0, batchesProcessed: 0, fragmentsPublished: 0 },
+            uptime: 0
+          });
+        } else {
+          throw new Error(data.error);
+        }
+      } catch (error) {
+        addLog('error', `Failed to stop: ${error.message}`);
+        showError(error.message);
+        stopBtn.disabled = false;
+        stopBtn.textContent = '⏹️ Stop Pipeline';
+      }
+    });
+
+    // Fetch status
+    async function fetchStatus() {
+      try {
+        const response = await fetch(`${API_BASE}/pipeline/status`);
+        const status = await response.json();
+        updateStatus(status);
+      } catch (error) {
+        console.error('Failed to fetch status:', error);
+      }
+    }
+
+    // Update status UI
+    function updateStatus(status) {
+      // Update badge
+      pipelineStatus.textContent = status.isRunning ? 'Running' : 'Idle';
+      pipelineStatus.className = `status-badge ${status.isRunning ? 'status-running' : 'status-idle'}`;
+
+      // Update phase
+      pipelinePhase.textContent = status.phase || '-';
+
+      // Update uptime
+      pipelineUptime.textContent = formatUptime(status.uptime);
+
+      // Update stats
+      statsSegments.textContent = status.stats.segmentsFetched || 0;
+      statsBatches.textContent = status.stats.batchesProcessed || 0;
+      statsPublished.textContent = status.stats.fragmentsPublished || 0;
+
+      // Show error if present
+      if (status.lastError) {
+        showError(status.lastError);
+      } else {
+        hideError();
+      }
+    }
+
+    // Format uptime
+    function formatUptime(seconds) {
+      if (!seconds) return '0s';
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const secs = seconds % 60;
+      if (hours > 0) return `${hours}h ${minutes}m ${secs}s`;
+      if (minutes > 0) return `${minutes}m ${secs}s`;
+      return `${secs}s`;
+    }
+
+    // Show error
+    function showError(message) {
+      errorMessage.textContent = message;
+      errorAlert.style.display = 'block';
+    }
+
+    // Hide error
+    function hideError() {
+      errorAlert.style.display = 'none';
+    }
+
+    // Add log entry
+    function addLog(type, message) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const timestamp = new Date().toLocaleTimeString();
+      entry.textContent = `[${timestamp}] ${message}`;
+      logs.appendChild(entry);
+      logs.scrollTop = logs.scrollHeight;
+    }
+
+    // Start status polling
+    function startStatusPolling() {
+      if (statusInterval) clearInterval(statusInterval);
+      statusInterval = setInterval(fetchStatus, 2000);
+      fetchStatus();
+    }
+
+    // Stop status polling
+    function stopStatusPolling() {
+      if (statusInterval) {
+        clearInterval(statusInterval);
+        statusInterval = null;
+      }
+    }
+
+    // Initial status fetch
+    fetchStatus();
+  </script>
+</body>
+</html>
+
