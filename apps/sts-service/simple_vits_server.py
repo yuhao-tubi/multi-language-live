@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """
-Simplified Fast Audio Server - VITS Only
+Simple VITS Audio Processing Server
 
-This is a simplified version of the streaming audio client that only uses VITS models
-to isolate and fix the TTS synthesis error. It replicates the exact protocol from
-stream_audio_client.py but forces the use of fast_model (VITS) for all languages.
+A streamlined audio processing server that provides real-time speech-to-text-to-speech (STS)
+translation using VITS models for fast synthesis. Designed as a drop-in replacement for
+echo-audio-processor, compatible with live-media-service.
+
+Key Features:
+- VITS-only TTS synthesis for maximum speed (2-5 seconds per fragment)
+- Background noise preservation (70% TTS + 30% background)
+- Duration matching using rubberband
+- Sequential processing (FIFO) to maintain audio order
+- Socket.IO protocol compatible with live-media-service
 
 Author: Philip Baillargeon (Assistance by Cursor/GPT)
 """
@@ -19,15 +26,12 @@ import argparse
 import threading
 import queue
 import time
-import json
 import numpy as np
 import socketio
 from flask import Flask
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
-import yaml
 import tempfile
-import signal
 
 # Import existing translation and TTS functions
 from talk_multi_coqui import (
@@ -45,24 +49,28 @@ from talk_multi_coqui import (
     load_cfg
 )
 
-# Import audio utilities
-from utils.audio_normalization import get_audio_duration
-
 # Import audio streaming utilities
 from utils.transcription import (
     get_whisper_model,
     transcribe_audio_chunk
 )
 from utils.audio_streaming import (
-    load_audio_file,
-    create_silence
+    load_audio_file
 )
-from utils.voice_management import setup_voice_samples
 
 
 class SimpleVITSServer:
     """
-    Simplified server that replicates stream_audio_client.py exactly but forces VITS models
+    Simple VITS Audio Processing Server
+    
+    A streamlined server that processes live audio streams through:
+    1. Whisper transcription (speech-to-text)
+    2. M2M100 translation (text-to-text) 
+    3. VITS synthesis (text-to-speech)
+    4. Background noise mixing (preserves ambient sounds)
+    5. Duration matching (ensures consistent timing)
+    
+    Optimized for single target language processing with VITS models for maximum speed.
     """
     
     def __init__(self, args):
@@ -99,13 +107,12 @@ class SimpleVITSServer:
         # Voice configuration
         self.voices = {}
         
-        # Processing queue for async processing (EXACTLY like stream_audio_client.py)
+        # Processing queue for sequential audio processing (FIFO order)
         self.processing_queue = queue.Queue()
         self.processing_thread = None
         
-        # Store processed audio fragments for combining at the end
-        self.processed_audio_fragments: List[np.ndarray] = []
-        self.processed_sample_rate = None
+        # Note: Removed unused processed_audio_fragments and processed_sample_rate
+        # These were intended for combining fragments but are not used in this implementation
         
         # Setup output directory if saving locally
         if self.save_local:
@@ -121,7 +128,7 @@ class SimpleVITSServer:
         print(f"Created output directory: {lang_dir}")
     
     def _setup_socket_handlers(self):
-        """Setup Socket.IO server event handlers (EXACTLY like stream_audio_client.py)"""
+        """Setup Socket.IO server event handlers for live-media-service compatibility"""
         
         @self.sio.event
         def connect(sid, environ):
@@ -144,7 +151,7 @@ class SimpleVITSServer:
         
         @self.sio.on('fragment:data')
         def fragment_data(sid, delivery):
-            """Handle incoming audio fragment from client (EXACTLY like stream_audio_client.py)"""
+            """Handle incoming audio fragment from live-media-service client"""
             fragment = delivery['fragment']
             data = delivery['data']
             
@@ -168,7 +175,7 @@ class SimpleVITSServer:
     
     
     def _preload_models(self):
-        """Preload all models before starting (EXACTLY like stream_audio_client.py)"""
+        """Preload Whisper, translation, and VITS TTS models for fast processing"""
         print("Preloading models...")
         
         try:
@@ -188,11 +195,11 @@ class SimpleVITSServer:
             self.mt_model = get_mt(self.args.device)
             print("✓ Translation model loaded")
             
-            # Load TTS model for single target language - FORCE VITS (fast_model)
+            # Load VITS TTS model for single target language (fast synthesis)
             print(f"Loading TTS model for {self.target_lang}...")
             language_config = self.voices.get(self.target_lang, {})
             
-            # ALWAYS use fast_model (VITS) - this is the key difference
+            # Use VITS model for fast synthesis (key advantage over XTTS)
             model_name = language_config.get("fast_model")
             if model_name:
                 print(f"Loading VITS TTS model: {model_name}")
@@ -281,7 +288,7 @@ class SimpleVITSServer:
             return False
 
     def _processing_worker(self):
-        """Sequential processing worker - maintains fragment order (EXACTLY like stream_audio_client.py)"""
+        """Sequential processing worker - maintains fragment order (FIFO) for consistent audio timing"""
         print("Sequential processing worker started")
         while self.running:
             try:
@@ -338,7 +345,19 @@ class SimpleVITSServer:
         print("Processing worker stopped")
 
     def _process_fragment(self, sid: str, fragment: Dict[str, Any], data: bytes) -> Optional[bytes]:
-        """Process a single fragment (EXACTLY like stream_audio_client.py)"""
+        """
+        Process a single audio fragment through the complete STS pipeline
+        
+        Pipeline: Audio → Transcription → Translation → TTS → Mixing → Encoding
+        
+        Args:
+            sid: Socket ID of the client
+            fragment: Fragment metadata (duration, sample rate, etc.)
+            data: Binary audio data (m4s format)
+            
+        Returns:
+            Processed audio data (m4s format) or None if processing failed
+        """
         try:
             fragment_id = fragment.get('id', 'unknown')
             print(f"Processing fragment {fragment_id}...")
@@ -585,15 +604,6 @@ class SimpleVITSServer:
                 # Simple mixing: TTS + reduced background (total = 100%)
                 mixed_audio = (tts_audio * tts_volume) + (original_audio * background_volume)
             
-            # TODO: Re-enable proper mixing once TTS is confirmed working
-            # mixed_audio = np.copy(original_audio)
-            # tts_volume = 1.0  # Full TTS volume for debugging
-            # background_volume = 0.1  # Very low background volume
-            # 
-            # for start_sample, end_sample in speech_regions:
-            #     speech_region = tts_audio[start_sample:end_sample] * tts_volume
-            #     background_region = original_audio[start_sample:end_sample] * background_volume
-            #     mixed_audio[start_sample:end_sample] = speech_region + background_region
             
             print(f"✓ Audio mixing complete:")
             print(f"  Final audio length: {len(mixed_audio)/sample_rate:.2f}s")
@@ -606,77 +616,18 @@ class SimpleVITSServer:
             print("Falling back to TTS audio only")
             return tts_audio
 
-    def _detect_speech_regions(self, audio: np.ndarray, sample_rate: int) -> List[Tuple[int, int]]:
-        """
-        Detect speech regions using simple energy-based Voice Activity Detection (VAD)
-        
-        Args:
-            audio: Audio data
-            sample_rate: Sample rate
-            
-        Returns:
-            List of (start_sample, end_sample) tuples for speech regions
-        """
-        try:
-            # Calculate energy in 100ms windows
-            window_size = int(0.1 * sample_rate)  # 100ms windows
-            hop_size = window_size // 2  # 50% overlap
-            
-            # Calculate dynamic energy threshold based on audio levels
-            audio_energy = np.mean(audio ** 2)
-            energy_threshold = max(0.001, audio_energy * 0.1)  # 10% of average energy
-            min_speech_duration = int(0.2 * sample_rate)  # Minimum 200ms speech (reduced)
-            
-            print(f"Speech detection parameters:")
-            print(f"  Audio energy: {audio_energy:.6f}")
-            print(f"  Energy threshold: {energy_threshold:.6f}")
-            print(f"  Min speech duration: {min_speech_duration/sample_rate:.2f}s")
-            
-            energies = []
-            for i in range(0, len(audio) - window_size, hop_size):
-                window = audio[i:i + window_size]
-                energy = np.mean(window ** 2)
-                energies.append(energy)
-            
-            # Find speech regions
-            speech_regions = []
-            in_speech = False
-            speech_start = 0
-            
-            for i, energy in enumerate(energies):
-                sample_pos = i * hop_size
-                
-                if energy > energy_threshold and not in_speech:
-                    # Start of speech
-                    in_speech = True
-                    speech_start = sample_pos
-                elif energy <= energy_threshold and in_speech:
-                    # End of speech
-                    in_speech = False
-                    speech_end = sample_pos
-                    
-                    # Only include regions longer than minimum duration
-                    if speech_end - speech_start > min_speech_duration:
-                        speech_regions.append((speech_start, speech_end))
-            
-            # Handle case where speech continues to end of audio
-            if in_speech and len(audio) - speech_start > min_speech_duration:
-                speech_regions.append((speech_start, len(audio)))
-            
-            return speech_regions
-            
-        except Exception as e:
-            print(f"Warning: Speech detection failed: {e}")
-            # Fallback: treat entire audio as speech region
-            return [(0, len(audio))]
-        
-        # If no speech regions detected, treat entire audio as speech
-        if not speech_regions:
-            print("⚠️ No speech regions detected - treating entire audio as speech")
-            return [(0, len(audio))]
 
     def _encode_audio(self, audio_data: np.ndarray, sample_rate: int) -> bytes:
-        """Encode audio data as m4s container (EXACTLY like stream_audio_client.py)"""
+        """
+        Encode audio data as m4s container for live-media-service compatibility
+        
+        Args:
+            audio_data: Processed audio as numpy array
+            sample_rate: Audio sample rate
+            
+        Returns:
+            Binary audio data in m4s format
+        """
         try:
             import ffmpeg
             import io
@@ -713,7 +664,7 @@ class SimpleVITSServer:
             return audio_data.tobytes()
 
     def start_server(self):
-        """Start the Socket.IO server (EXACTLY like stream_audio_client.py)"""
+        """Start the Socket.IO server and begin processing audio fragments"""
         print("=" * 60)
         print("Simple VITS Audio Processing Server")
         print("=" * 60)
@@ -731,7 +682,7 @@ class SimpleVITSServer:
         print("Starting Simple VITS server...")
         self.running = True
         
-        # Start background processing thread (EXACTLY like stream_audio_client.py)
+        # Start background processing thread for sequential audio processing
         self.processing_thread = threading.Thread(target=self._processing_worker)
         self.processing_thread.daemon = True
         self.processing_thread.start()
