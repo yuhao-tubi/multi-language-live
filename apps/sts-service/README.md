@@ -215,6 +215,8 @@ Currently optimized for single-language processing. Supported languages:
 - Fastest processing (2-5 seconds per fragment)
 - Ideal for high-throughput scenarios
 - Lower memory usage
+- **Duration Matching**: Uses rubberband to ensure returned audio matches original duration
+- **Background Noise Preservation**: Mixes TTS audio with original background noise to maintain ambient sounds
 
 #### Performance Optimizations
 

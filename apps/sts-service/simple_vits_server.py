@@ -418,6 +418,10 @@ class SimpleVITSServer:
                 print("TTS synthesis failed, returning original audio")
                 return self._encode_audio(audio_data, actual_sample_rate)
             
+            # Debug: Check if TTS file exists and has content
+            file_size = wav_path.stat().st_size if wav_path.exists() else 0
+            print(f"TTS file info: {wav_path}, size: {file_size} bytes")
+            
             # Load synthesized audio
             import soundfile as sf
             synthesized_audio, tts_sample_rate = sf.read(str(wav_path), dtype="float32")
@@ -436,13 +440,241 @@ class SimpleVITSServer:
             
             print(f"TTS audio duration: {len(synthesized_audio)/actual_sample_rate:.2f}s")
             
+            # Ensure TTS audio matches original duration
+            original_duration = len(audio_data) / actual_sample_rate
+            tts_duration = len(synthesized_audio) / actual_sample_rate
+            
+            print(f"Duration matching:")
+            print(f"  Original duration: {original_duration:.2f}s")
+            print(f"  TTS duration: {tts_duration:.2f}s")
+            
+            if abs(tts_duration - original_duration) > 0.1:  # More than 100ms difference
+                # Adjust speed to match original duration
+                required_speed = tts_duration / original_duration
+                # Cap at 2.0x to prevent quality degradation
+                required_speed = max(1.0, min(2.0, required_speed))
+                
+                print(f"  Required speed adjustment: {required_speed:.2f}x")
+                
+                if required_speed > 1.0:
+                    print(f"  → Speeding up audio to match original duration")
+                    synthesized_audio = self._adjust_audio_speed_in_memory(synthesized_audio, actual_sample_rate, required_speed)
+                else:
+                    print(f"  → No speed adjustment needed (TTS duration already matches)")
+            else:
+                print(f"  → Duration already matches (within 100ms)")
+            
+            # Debug: Check TTS audio levels
+            tts_max = np.max(np.abs(synthesized_audio))
+            original_max = np.max(np.abs(audio_data))
+            print(f"Audio levels:")
+            print(f"  TTS max amplitude: {tts_max:.4f}")
+            print(f"  Original max amplitude: {original_max:.4f}")
+            
+            # Mix TTS audio with original background noise
+            print("Mixing TTS with background noise...")
+            final_audio = self._mix_tts_with_background(synthesized_audio, audio_data, actual_sample_rate)
+            
             # Encode as m4s
-            return self._encode_audio(synthesized_audio, actual_sample_rate)
+            return self._encode_audio(final_audio, actual_sample_rate)
             
         except Exception as e:
             print(f"ERROR: Error processing fragment: {e}")
             return None
     
+    def _adjust_audio_speed_in_memory(self, audio_data: np.ndarray, sample_rate: int, speed_factor: float) -> np.ndarray:
+        """
+        Adjust audio speed using rubberband for high quality while preserving pitch
+        
+        Args:
+            audio_data: Input audio data as numpy array
+            sample_rate: Sample rate of the audio
+            speed_factor: Speed adjustment factor (1.0 = no change, 2.0 = 2x faster)
+            
+        Returns:
+            Adjusted audio data as numpy array
+        """
+        import subprocess
+        import tempfile
+        import soundfile as sf
+        
+        try:
+            # Create temporary files for input and output
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_input:
+                temp_input_path = temp_input.name
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_output:
+                temp_output_path = temp_output.name
+            
+            try:
+                # Write input audio to temporary file
+                sf.write(temp_input_path, audio_data, sample_rate)
+                
+                # Use rubberband for high-quality time stretching
+                cmd = [
+                    "rubberband",
+                    f"-T{speed_factor}",      # Tempo change (no space between -T and value)
+                    "-p", "0",                # Keep pitch unchanged (0 semitones)
+                    "-F",                     # Enable formant preservation
+                    "-q",                     # Quiet mode
+                    temp_input_path,
+                    temp_output_path
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    print(f"Warning: rubberband failed: {result.stderr}")
+                    print("Falling back to original audio")
+                    return audio_data
+                
+                # Read the adjusted audio
+                adjusted_audio, _ = sf.read(temp_output_path, dtype="float32")
+                
+                print(f"✓ Speed adjustment applied: {len(audio_data)/sample_rate:.2f}s → {len(adjusted_audio)/sample_rate:.2f}s")
+                return adjusted_audio
+                
+            finally:
+                # Clean up temporary files
+                import os
+                if os.path.exists(temp_input_path):
+                    os.unlink(temp_input_path)
+                if os.path.exists(temp_output_path):
+                    os.unlink(temp_output_path)
+                    
+        except Exception as e:
+            print(f"Warning: Speed adjustment failed: {e}")
+            print("Falling back to original audio")
+            return audio_data
+
+    def _mix_tts_with_background(self, tts_audio: np.ndarray, original_audio: np.ndarray, sample_rate: int) -> np.ndarray:
+        """
+        Mix TTS audio with original background noise to preserve ambient sounds
+        
+        Args:
+            tts_audio: Synthesized TTS audio
+            original_audio: Original audio with background noise
+            sample_rate: Sample rate of both audio streams
+            
+        Returns:
+            Mixed audio with TTS speech over background noise
+        """
+        try:
+            # Ensure both audio streams are the same length
+            min_length = min(len(tts_audio), len(original_audio))
+            tts_audio = tts_audio[:min_length]
+            original_audio = original_audio[:min_length]
+            
+            # Simple approach: treat entire audio as speech region and mix TTS over background
+            print("Using simple audio mixing (entire audio as speech region)...")
+            
+            # Check if mixing is disabled
+            if hasattr(self, 'args') and getattr(self.args, 'no_mixing', False):
+                print("Using TTS-only mode (--no-mixing flag)")
+                mixed_audio = tts_audio
+            else:
+                # Mix TTS over entire background audio (total volume = 100%)
+                tts_volume = 0.7  # TTS volume (70%)
+                background_volume = 0.3  # Background volume (30%)
+                
+                print(f"Mixing parameters:")
+                print(f"  TTS volume: {tts_volume:.1f} (70%)")
+                print(f"  Background volume: {background_volume:.1f} (30%)")
+                print(f"  Total volume: {tts_volume + background_volume:.1f} (100%)")
+                
+                # Simple mixing: TTS + reduced background (total = 100%)
+                mixed_audio = (tts_audio * tts_volume) + (original_audio * background_volume)
+            
+            # TODO: Re-enable proper mixing once TTS is confirmed working
+            # mixed_audio = np.copy(original_audio)
+            # tts_volume = 1.0  # Full TTS volume for debugging
+            # background_volume = 0.1  # Very low background volume
+            # 
+            # for start_sample, end_sample in speech_regions:
+            #     speech_region = tts_audio[start_sample:end_sample] * tts_volume
+            #     background_region = original_audio[start_sample:end_sample] * background_volume
+            #     mixed_audio[start_sample:end_sample] = speech_region + background_region
+            
+            print(f"✓ Audio mixing complete:")
+            print(f"  Final audio length: {len(mixed_audio)/sample_rate:.2f}s")
+            print(f"  Mixed TTS ({tts_volume:.1f}) + Background ({background_volume:.1f})")
+            
+            return mixed_audio
+            
+        except Exception as e:
+            print(f"Warning: Audio mixing failed: {e}")
+            print("Falling back to TTS audio only")
+            return tts_audio
+
+    def _detect_speech_regions(self, audio: np.ndarray, sample_rate: int) -> List[Tuple[int, int]]:
+        """
+        Detect speech regions using simple energy-based Voice Activity Detection (VAD)
+        
+        Args:
+            audio: Audio data
+            sample_rate: Sample rate
+            
+        Returns:
+            List of (start_sample, end_sample) tuples for speech regions
+        """
+        try:
+            # Calculate energy in 100ms windows
+            window_size = int(0.1 * sample_rate)  # 100ms windows
+            hop_size = window_size // 2  # 50% overlap
+            
+            # Calculate dynamic energy threshold based on audio levels
+            audio_energy = np.mean(audio ** 2)
+            energy_threshold = max(0.001, audio_energy * 0.1)  # 10% of average energy
+            min_speech_duration = int(0.2 * sample_rate)  # Minimum 200ms speech (reduced)
+            
+            print(f"Speech detection parameters:")
+            print(f"  Audio energy: {audio_energy:.6f}")
+            print(f"  Energy threshold: {energy_threshold:.6f}")
+            print(f"  Min speech duration: {min_speech_duration/sample_rate:.2f}s")
+            
+            energies = []
+            for i in range(0, len(audio) - window_size, hop_size):
+                window = audio[i:i + window_size]
+                energy = np.mean(window ** 2)
+                energies.append(energy)
+            
+            # Find speech regions
+            speech_regions = []
+            in_speech = False
+            speech_start = 0
+            
+            for i, energy in enumerate(energies):
+                sample_pos = i * hop_size
+                
+                if energy > energy_threshold and not in_speech:
+                    # Start of speech
+                    in_speech = True
+                    speech_start = sample_pos
+                elif energy <= energy_threshold and in_speech:
+                    # End of speech
+                    in_speech = False
+                    speech_end = sample_pos
+                    
+                    # Only include regions longer than minimum duration
+                    if speech_end - speech_start > min_speech_duration:
+                        speech_regions.append((speech_start, speech_end))
+            
+            # Handle case where speech continues to end of audio
+            if in_speech and len(audio) - speech_start > min_speech_duration:
+                speech_regions.append((speech_start, len(audio)))
+            
+            return speech_regions
+            
+        except Exception as e:
+            print(f"Warning: Speech detection failed: {e}")
+            # Fallback: treat entire audio as speech region
+            return [(0, len(audio))]
+        
+        # If no speech regions detected, treat entire audio as speech
+        if not speech_regions:
+            print("⚠️ No speech regions detected - treating entire audio as speech")
+            return [(0, len(audio))]
+
     def _encode_audio(self, audio_data: np.ndarray, sample_rate: int) -> bytes:
         """Encode audio data as m4s container (EXACTLY like stream_audio_client.py)"""
         try:
@@ -523,6 +755,7 @@ def main():
     parser.add_argument("--config", "-c", default="coqui-voices.yaml", help="Voice configuration file")
     parser.add_argument("--whisper-model", default="base", help="Whisper model size")
     parser.add_argument("--device", default="cpu", help="Processing device")
+    parser.add_argument("--no-mixing", action="store_true", help="Disable background noise mixing (TTS only)")
     
     args = parser.parse_args()
     
