@@ -18,6 +18,7 @@
 8. [Configuration and Deployment](#configuration-and-deployment)
 9. [Performance and Scalability](#performance-and-scalability)
 10. [Future Roadmap](#future-roadmap)
+11. [Related Projects](#related-projects)
 
 ---
 
@@ -1033,6 +1034,34 @@ See monorepo root `README.md` for contribution guidelines.
 ### License
 
 ISC
+
+---
+
+---
+
+## Related Projects
+
+### Live Media Processor Service
+
+For production-grade live HLS processing with external audio processing integration, see **[MEDIA_SERVICE_ARCHITECTURE.md](./MEDIA_SERVICE_ARCHITECTURE.md)**.
+
+This new service extends the concepts from this project by adding:
+- **Disk-based storage** for TS segments and processed fragments
+- **Batch processing** with configurable 30-second buffers
+- **External audio processor integration** via WebSocket (Socket.IO)
+- **Production features** including storage management, comprehensive logging, and web-based monitoring
+- **Test-driven development** with Vitest framework
+
+**Key Differences:**
+
+| Feature | streaming-demux-remux (This) | Live Media Processor (New) |
+|---------|------------------------------|----------------------------|
+| Processing Mode | Real-time in-memory | Batch processing on disk |
+| Audio Processing | Internal Node.js transforms | External service via WebSocket |
+| Storage | None (streaming only) | Disk-based with retention policies |
+| Buffer Strategy | Continuous streaming | 30s batches |
+| Container Format | Nut (for streaming) | FMP4 (for fragments) |
+| Use Case | Low-latency audio effects | Production multi-language processing |
 
 ---
 

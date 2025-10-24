@@ -51,7 +51,12 @@ brew install rubberband  # macOS
 # Create and activate conda environment
 conda env create -f environment.yml
 conda activate multilingual-tts
+
+# Test installation
+python test_coqui_installation.py
 ```
+
+> **⚠️ Installation Issues?** If you see errors like "issubclass() arg 1 must be a class", see [FIX_INSTALLATION.md](FIX_INSTALLATION.md) for a quick automated fix.
 
 ### Option 2: Pip Installation
 

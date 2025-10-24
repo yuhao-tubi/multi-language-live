@@ -93,6 +93,48 @@ Edit `coqui-voices.yaml` to configure TTS models and voices for different langua
 4. **Model Download**: First run will download M2M100 and TTS models (several GB)
 5. **Memory Usage**: Large models require significant RAM (8GB+ recommended)
 
+### Coqui TTS Installation Issues
+
+#### Error: "issubclass() arg 1 must be a class"
+
+This error indicates a NumPy version incompatibility. Coqui TTS 0.24.1 requires NumPy 1.x.
+
+**Solution:**
+```bash
+# Remove existing environment
+conda deactivate
+conda env remove -n multilingual-tts
+
+# Recreate environment with updated dependencies
+conda env create -f environment.yml
+conda activate multilingual-tts
+
+# Verify NumPy version (should be < 2.0.0)
+python -c "import numpy; print(f'NumPy version: {numpy.__version__}')"
+
+# Verify Coqui TTS installation
+python -c "from TTS.api import TTS; print('Coqui TTS loaded successfully')"
+```
+
+#### Other Dependency Issues
+
+If you continue to have issues after fixing NumPy:
+
+```bash
+# Check for conflicting packages
+pip list | grep -E "numpy|torch|transformers|TTS"
+
+# Force reinstall Coqui TTS
+pip uninstall coqui-tts -y
+pip install coqui-tts==0.24.1
+
+# If still failing, try installing dependencies in order
+pip install "numpy<2.0.0"
+pip install torch torchaudio
+pip install "transformers>=4.33.0,<4.41.0"
+pip install coqui-tts==0.24.1
+```
+
 ### Performance Tips
 
 - Use `--no-cache` to disable caching during development

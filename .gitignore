@@ -4,7 +4,7 @@ dist/
 *.log
 .DS_Store
 output/
-
+tmp/
 # Nx
 .nx/cache
 .nx/workspace-data
@@ -56,3 +56,25 @@ environment.yml.bak
 apps/sts-service/__pycache__/
 apps/sts-service/.cache_coqui/
 apps/sts-service/processed_fragments/
+
+# Logs
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+# Environment variables
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+
+# Task files
+# tasks.json
+# tasks/ 

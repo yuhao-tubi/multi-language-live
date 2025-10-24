@@ -22,6 +22,8 @@ dependencies:
 
   # Pip-only packages (not available in conda)
   - pip:
+      # IMPORTANT: Pin NumPy to 1.x for Coqui TTS 0.24.1 compatibility
+      - numpy<2.0.0
       - coqui-tts==0.24.1
       
       # Audio & speech utilities

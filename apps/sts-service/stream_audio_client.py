@@ -65,6 +65,7 @@ class LiveStreamProcessor:
     """
     
     def __init__(self, args):
+        print(f"Initializing LiveStreamProcessor with args: {args}")
         self.args = args
         self.targets = [t.strip() for t in args.targets.split(",") if t.strip()]
         self.server_url = args.server_url
@@ -871,6 +872,7 @@ class LiveStreamProcessor:
 
 def main():
     """Main entry point"""
+    print("Starting main entry point")
     ap = argparse.ArgumentParser(description="Live Audio Stream Processing Client")
     ap.add_argument("--server-url", default="ws://localhost:4000", help="Socket.IO server URL")
     ap.add_argument("--stream-id", default="stream-1", help="Stream ID to subscribe to")
