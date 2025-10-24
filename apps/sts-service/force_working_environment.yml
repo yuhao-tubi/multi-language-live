@@ -1,4 +1,4 @@
-name: multilingual-tts-test
+name: multilingual-tts
 channels:
   - conda-forge
 dependencies:
