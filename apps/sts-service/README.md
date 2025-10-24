@@ -57,15 +57,19 @@ cd live-caption-test
 brew install rubberband  # macOS
 # or sudo apt-get install rubberband-cli  # Linux
 
-# Create and activate conda environment
+# Try the main environment first
 conda env create -f environment.yml
 conda activate multilingual-tts
+
+# If you encounter issues, try the working environment
+# conda env create -f force_working_environment.yml
+# conda activate multilingual-tts
 
 # Test installation
 python test_coqui_installation.py
 ```
 
-> **⚠️ Installation Issues?** If you see errors like "issubclass() arg 1 must be a class", see [FIX_INSTALLATION.md](FIX_INSTALLATION.md) for a quick automated fix.
+> **⚠️ Installation Issues?** If you encounter problems with `environment.yml`, try `force_working_environment.yml` which contains a known working configuration. If you see errors like "issubclass() arg 1 must be a class", see [FIX_INSTALLATION.md](FIX_INSTALLATION.md) for a quick automated fix.
 
 ### Option 2: Pip Installation
 
@@ -84,12 +88,20 @@ pip install -r requirements.txt
 
 ## 🎯 Usage
 
+### Available Servers
+
+This project provides two different server implementations:
+
+1. **`stream_audio_client.py`** - Full-featured STS server with voice cloning and advanced features
+2. **`simple_vits_server.py`** - Simplified VITS-based server for faster processing
+
 ### STS Server (Primary Use Case)
 
 The STS server acts as a drop-in replacement for echo-audio-processor, processing live audio streams from live-media-service.
 
 #### Quick Start
 
+**Full STS Server (stream_audio_client.py):**
 ```bash
 # Start STS server for Spanish translation
 python stream_audio_client.py --targets es
@@ -101,12 +113,25 @@ python stream_audio_client.py --targets es --device mps
 python stream_audio_client.py --targets es --config coqui-voices.yaml --device mps
 ```
 
+**Simple VITS Server (simple_vits_server.py):**
+```bash
+# Start simple server for Spanish translation
+python simple_vits_server.py --targets es
+
+# Start with GPU acceleration
+python simple_vits_server.py --targets es --device mps
+```
+
 #### Complete Integration with Live-Media-Service
 
-1. **Start the STS Server**:
+1. **Start the STS Server** (choose one):
    ```bash
    cd apps/sts-service
+   # Option 1: Full STS server
    python stream_audio_client.py --targets es --device mps
+   
+   # Option 2: Simple VITS server (faster)
+   python simple_vits_server.py --targets es --device mps
    ```
 
 2. **Start Live-Media-Service** (in another terminal):
@@ -123,6 +148,7 @@ python stream_audio_client.py --targets es --config coqui-voices.yaml --device m
 
 #### Server Configuration Options
 
+**Full STS Server (stream_audio_client.py):**
 ```bash
 # Basic server startup
 python stream_audio_client.py --targets es
@@ -140,10 +166,28 @@ python stream_audio_client.py --targets es --no-cache
 # Save processed audio locally (uses more memory)
 python stream_audio_client.py --targets es --save-local
 
+# Fast TTS mode (VITS models - much faster, no voice cloning)
+python stream_audio_client.py --targets es --fast-tts
+
 # Different Whisper model sizes
 python stream_audio_client.py --targets es --whisper-model base    # Default
 python stream_audio_client.py --targets es --whisper-model small   # Better accuracy
 python stream_audio_client.py --targets es --whisper-model tiny    # Faster processing
+```
+
+**Simple VITS Server (simple_vits_server.py):**
+```bash
+# Basic server startup
+python simple_vits_server.py --targets es
+
+# With GPU acceleration
+python simple_vits_server.py --targets es --device mps    # Apple Silicon
+python simple_vits_server.py --targets es --device cuda   # NVIDIA GPU
+
+# Different Whisper model sizes
+python simple_vits_server.py --targets es --whisper-model base    # Default
+python simple_vits_server.py --targets es --whisper-model small   # Better accuracy
+python simple_vits_server.py --targets es --whisper-model tiny    # Faster processing
 ```
 
 #### Supported Target Languages
@@ -159,6 +203,19 @@ Currently optimized for single-language processing. Supported languages:
 - `ja` - Japanese
 - `ko` - Korean
 
+#### TTS Performance Modes
+
+**Full STS Server (stream_audio_client.py):**
+- **Standard Mode (Default)**: Uses XTTSv2 models with voice cloning, supports custom voice samples (Joe Buck voice), higher quality but slower processing (8-16 seconds per fragment)
+- **Fast TTS Mode (`--fast-tts`)**: Uses VITS models (much faster), no voice cloning (uses default voices), lower quality but significantly faster (2-5 seconds per fragment), ideal for performance testing and real-time streaming
+
+**Simple VITS Server (simple_vits_server.py):**
+- **VITS Mode Only**: Always uses VITS models for maximum speed
+- No voice cloning capabilities
+- Fastest processing (2-5 seconds per fragment)
+- Ideal for high-throughput scenarios
+- Lower memory usage
+
 #### Performance Optimizations
 
 The STS server includes several optimizations:
@@ -167,8 +224,8 @@ The STS server includes several optimizations:
 - **Hallucination Detection**: Automatically skips repetitive/corrupted audio
 - **Silence Detection**: Skips silent fragments to save processing time
 - **Fast TTS Synthesis**: 2.0x synthesis speed with quality controls
+- **Fast TTS Mode**: VITS models for maximum speed (no voice cloning)
 - **Speed Adjustment Cap**: Maximum 2.0x speed adjustment to prevent quality loss
-- **Text Truncation**: Limits TTS input to 200 characters to prevent issues
 - **Memory Management**: No file saving by default, automatic cleanup after each fragment
 - **Model Warmup**: Pre-loads models to eliminate first-fragment latency
 
@@ -267,11 +324,14 @@ languages:
 
 ```
 live-caption-test/
+├── stream_audio_client.py       # Full STS server (primary)
+├── simple_vits_server.py        # Simple VITS server (fast)
 ├── talk_multi_coqui.py          # Main VTT processing application
 ├── talk_audio_stream.py         # NEW: Audio streaming transcription
 ├── test_translation.py          # Translation testing tool
 ├── coqui-voices.yaml           # TTS model configuration
-├── environment.yml              # Conda environment
+├── environment.yml              # Conda environment (primary)
+├── force_working_environment.yml # Known working environment (fallback)
 ├── requirements.txt             # Pip requirements
 ├── utils/                       # Utilities
 │   ├── __init__.py

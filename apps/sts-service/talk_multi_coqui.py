@@ -341,6 +341,87 @@ def get_tts(model_name: str) -> CoquiTTS:
                 raise e
     return _tts_cache[model_name]
 
+def synth_to_wav_vits(text: str, model_name: str, target_language: str = 'es', speed: float = 1.0) -> Path:
+    """
+    Simplified VITS synthesis - single speaker, no voice cloning
+    
+    Args:
+        text: Text to synthesize
+        model_name: VITS model name
+        target_language: Target language code
+        speed: Speech speed multiplier (1.0 = normal, >1.0 = faster, <1.0 = slower)
+        
+    Returns:
+        Path to generated WAV file
+    """
+    # Create a more robust temporary file path
+    import tempfile
+    import os
+    
+    # Create temporary file with explicit cleanup
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".wav", prefix="vits_synth_")
+    os.close(temp_fd)  # Close the file descriptor immediately
+    wav = Path(temp_path)
+    
+    tts = get_tts(model_name)
+    
+    # Preprocess text for better TTS quality
+    processed_text = preprocess_text_for_tts(text, convert_numbers=False)
+    
+    # VITS synthesis - try multiple approaches
+    success = False
+    
+    # Approach 1: Try basic tts_to_file without speed parameter
+    try:
+        console.print(f"[dim]Attempting basic VITS synthesis...[/dim]")
+        tts.tts_to_file(text=processed_text, file_path=str(wav))
+        success = True
+        console.print(f"[dim]✓ Basic VITS synthesis successful[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]Basic synthesis failed: {e}[/yellow]")
+        
+        # Approach 2: Try with speed parameter
+        try:
+            console.print(f"[dim]Attempting VITS synthesis with speed={speed}...[/dim]")
+            tts.tts_to_file(text=processed_text, file_path=str(wav), speed=speed)
+            success = True
+            console.print(f"[dim]✓ Speed VITS synthesis successful[/dim]")
+        except Exception as e2:
+            console.print(f"[yellow]Speed synthesis failed: {e2}[/yellow]")
+            
+            # Approach 3: Try array-based synthesis as last resort
+            try:
+                console.print(f"[dim]Attempting array-based VITS synthesis...[/dim]")
+                audio_array = tts.tts(text=processed_text)
+                
+                # Handle different return types
+                import numpy as np
+                if isinstance(audio_array, list):
+                    audio_array = np.array(audio_array)
+                elif not isinstance(audio_array, np.ndarray):
+                    raise ValueError(f"Expected numpy array or list, got {type(audio_array)}")
+                
+                # Save the audio array to file
+                import soundfile as sf
+                sf.write(str(wav), audio_array, 22050)  # VITS models typically use 22050 Hz
+                success = True
+                console.print(f"[dim]✓ Array-based VITS synthesis successful[/dim]")
+                
+            except Exception as e3:
+                console.print(f"[red]All VITS synthesis methods failed: {e3}[/red]")
+                # Clean up the temporary file
+                if wav.exists():
+                    wav.unlink()
+                raise e3
+    
+    if not success:
+        # Clean up the temporary file
+        if wav.exists():
+            wav.unlink()
+        raise RuntimeError("All VITS synthesis methods failed")
+    
+    return wav
+
 def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str = 'es', voice_sample_path: str = None, speed: float = 1.0) -> Path:
     """
     Synthesize text to WAV file with optional voice cloning
@@ -356,6 +437,12 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
     Returns:
         Path to generated WAV file
     """
+    # Check if this is a VITS model - use simplified pipeline
+    if "vits" in model_name.lower():
+        console.print(f"[dim]Using simplified VITS pipeline for {model_name}[/dim]")
+        return synth_to_wav_vits(text, model_name, target_language, speed)
+    
+    # For XTTSv2 and other models, use full pipeline
     wav = Path(tempfile.mkstemp(suffix=".wav")[1])
     tts = get_tts(model_name)
     
@@ -380,7 +467,12 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
                 # Use default speaker voice
                 tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker, language=target_language, speed=speed)
         else:
-            tts.tts_to_file(text=processed_text, file_path=str(wav), speaker=speaker, speed=speed)
+            # For VITS and other single-speaker models, don't pass speaker parameter
+            try:
+                tts.tts_to_file(text=processed_text, file_path=str(wav), speed=speed)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Speed synthesis failed, trying basic synthesis: {e}[/yellow]")
+                tts.tts_to_file(text=processed_text, file_path=str(wav))
     else:
         # For multilingual models like XTTS v2, pass language parameter
         if "xtts" in model_name.lower():
@@ -397,7 +489,12 @@ def synth_to_wav(text: str, model_name: str, speaker=None, target_language: str 
             else:
                 tts.tts_to_file(text=processed_text, file_path=str(wav), language=target_language, speed=speed)
         else:
-            tts.tts_to_file(text=processed_text, file_path=str(wav), speed=speed)
+            # For VITS and other single-speaker models, use minimal parameters
+            try:
+                tts.tts_to_file(text=processed_text, file_path=str(wav), speed=speed)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Speed synthesis failed, trying basic synthesis: {e}[/yellow]")
+                tts.tts_to_file(text=processed_text, file_path=str(wav))
     
     return wav
 

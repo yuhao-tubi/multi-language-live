@@ -78,6 +78,7 @@ class LiveStreamProcessor:
         self.port = args.port
         self.save_local = args.save_local
         self.output_dir = Path(args.output_dir)
+        self.fast_tts = args.fast_tts
         
         # Socket.IO server
         self.app = Flask(__name__)
@@ -191,13 +192,34 @@ class LiveStreamProcessor:
             # Load TTS model for single target language
             print(f"Loading TTS model for {self.target_lang}...")
             language_config = self.voices.get(self.target_lang, {})
-            model_name = language_config.get("model")
-            if model_name:
-                print(f"Loading TTS model: {model_name}")
-                self.tts_model = get_tts(model_name)
-                print(f"✓ TTS model loaded for {self.target_lang}")
+            
+            # Choose model based on fast_tts flag
+            if self.fast_tts:
+                model_name = language_config.get("fast_model")
+                if model_name:
+                    print(f"Loading FAST TTS model: {model_name}")
+                    self.tts_model = get_tts(model_name)
+                    print(f"✓ Fast TTS model loaded for {self.target_lang}")
+                else:
+                    print(f"⚠️ No fast model configured for {self.target_lang}, falling back to standard model")
+                    model_name = language_config.get("model")
+                    if model_name:
+                        print(f"Loading TTS model: {model_name}")
+                        self.tts_model = get_tts(model_name)
+                        print(f"✓ TTS model loaded for {self.target_lang}")
+                    else:
+                        raise ValueError(f"No TTS model configured for {self.target_lang}")
             else:
-                raise ValueError(f"No TTS model configured for {self.target_lang}")
+                model_name = language_config.get("model")
+                if model_name:
+                    print(f"Loading TTS model: {model_name}")
+                    self.tts_model = get_tts(model_name)
+                    print(f"✓ TTS model loaded for {self.target_lang}")
+                else:
+                    raise ValueError(f"No TTS model configured for {self.target_lang}")
+            
+            # Store the actual model name for verification
+            self.actual_tts_model = model_name
             
             print("✓ All models preloaded successfully!")
             
@@ -229,11 +251,19 @@ class LiveStreamProcessor:
             translate(dummy_text, self.target_lang, self.args.device)
             print("✓ Translation model warmed up")
             
-            # Warmup TTS with dummy text
+            # Warmup TTS with dummy text using the actual loaded model
             test_tts_text = "Test"
             speaker = detect_speaker(test_tts_text)
-            model_name, tts_speaker, voice_sample = get_speaker_voice(self.voices, self.target_lang, speaker)
-            synth_to_wav(test_tts_text, model_name, speaker=tts_speaker, target_language=self.target_lang, voice_sample_path=voice_sample)
+            
+            # Use the actual model that was loaded (not the config lookup)
+            if self.fast_tts:
+                # For fast mode, use the loaded VITS model without speaker parameters
+                synth_to_wav(test_tts_text, self.actual_tts_model, speaker=None, target_language=self.target_lang, voice_sample_path=None)
+            else:
+                # For standard mode, use the loaded XTTSv2 model with voice cloning
+                _, tts_speaker, voice_sample = get_speaker_voice(self.voices, self.target_lang, speaker)
+                synth_to_wav(test_tts_text, self.actual_tts_model, speaker=tts_speaker, target_language=self.target_lang, voice_sample_path=voice_sample)
+            
             print("✓ TTS model warmed up")
             
         except Exception as e:
@@ -260,13 +290,15 @@ class LiveStreamProcessor:
             
             # Test TTS model for single target language
             if self.tts_model:
-                # Test TTS with a simple phrase
+                # Test TTS with a simple phrase using the actual loaded model
                 test_tts_text = "Test"
                 speaker = detect_speaker(test_tts_text)
-                model_name, tts_speaker, voice_sample = get_speaker_voice(self.voices, self.target_lang, speaker)
                 
-                # This is a quick test - we don't need to actually synthesize
-                print(f"✓ TTS model verified for {self.target_lang}")
+                # Verify using the actual model that was loaded
+                if self.fast_tts:
+                    print(f"✓ Fast TTS model verified for {self.target_lang} (VITS: {self.actual_tts_model})")
+                else:
+                    print(f"✓ TTS model verified for {self.target_lang} (XTTSv2: {self.actual_tts_model})")
             else:
                 print(f"ERROR: TTS model not found for {self.target_lang}")
                 return False
@@ -332,13 +364,7 @@ class LiveStreamProcessor:
         
         return False
     
-    def _truncate_text_for_tts(self, text: str, max_chars: int = 200) -> str:
-        """Truncate text to prevent excessive TTS duration"""
-        if len(text) > max_chars:
-            truncated = text[:max_chars] + "..."
-            print(f"✂️ Truncated text from {len(text)} to {len(truncated)} characters")
-            return truncated
-        return text
+    
     
     def _get_fast_tts_settings(self):
         """Get fast TTS settings for optimal performance"""
@@ -353,17 +379,36 @@ class LiveStreamProcessor:
         settings = self._get_fast_tts_settings()
         
         # Use faster synthesis parameters
-        print(f"🚀 Fast TTS Synthesis with speed={settings['speed']:.1f}x")
+        if self.fast_tts:
+            print(f"🚀 FAST TTS Synthesis (VITS model: {self.actual_tts_model})")
+        else:
+            print(f"🚀 Fast TTS Synthesis with speed={settings['speed']:.1f}x (XTTSv2 model: {self.actual_tts_model})")
         
         # Synthesize with optimized settings
-        synthesized_audio = synth_to_wav(
-            text, 
-            model_name, 
-            speaker=speaker, 
-            target_language=target_lang, 
-            voice_sample_path=voice_sample_path,
-            speed=settings['speed']  # Use faster speed
-        )
+        if self.fast_tts:
+            # Fast VITS models don't support speaker parameters or voice cloning
+            wav_path = synth_to_wav(
+                text, 
+                model_name, 
+                speaker=None,  # VITS models don't support speaker parameters
+                target_language=target_lang, 
+                voice_sample_path=None,  # No voice cloning for fast models
+                speed=1.0  # VITS models are already fast
+            )
+        else:
+            # Standard XTTSv2 with voice cloning and speed optimization
+            wav_path = synth_to_wav(
+                text, 
+                model_name, 
+                speaker=speaker, 
+                target_language=target_lang, 
+                voice_sample_path=voice_sample_path,
+                speed=settings['speed']  # Use faster speed
+            )
+        
+        # Load the synthesized audio from the WAV file
+        import soundfile as sf
+        synthesized_audio, sample_rate = sf.read(str(wav_path), dtype="float32")
         
         return synthesized_audio, settings
     
@@ -598,22 +643,19 @@ class LiveStreamProcessor:
                 # Return original audio data without processing
                 return self._encode_processed_audio(audio_data, sample_rate, fragment)
             
-            # Truncate text if too long to prevent TTS issues
-            truncated_text = self._truncate_text_for_tts(translated_text)
-            
             print(f"Using post-processing speed adjustment approach:")
             print(f"  Original duration: {original_duration:.1f}s")
             print(f"  Target duration: {original_duration:.1f}s")
             
             # Include speed in cache key
-            tts_key = sha1("TTS", mt_res["out"], self.target_lang, model_name, str(tts_speaker), "post_process")
+            tts_key = sha1("TTS", mt_res["out"], self.target_lang, self.actual_tts_model, str(tts_speaker), "post_process")
             wav_path = CACHE_DIR / f"{tts_key}.wav"
             
             if self.args.no_cache or not wav_path.exists():
-                # Use optimized TTS synthesis with truncated text
+                # Use optimized TTS synthesis with full text (no truncation)
                 temp_wav, tts_settings = self._optimize_tts_synthesis(
-                    truncated_text, 
-                    model_name, 
+                    translated_text, 
+                    self.actual_tts_model,  # Use the actually loaded model
                     tts_speaker, 
                     self.target_lang, 
                     voice_sample
@@ -907,6 +949,11 @@ class LiveStreamProcessor:
         print(f"Port: {self.port}")
         print(f"Target language: {self.target_lang}")
         print(f"Save locally: {self.save_local}")
+        print(f"Fast TTS mode: {self.fast_tts}")
+        if self.fast_tts:
+            print(f"Fast TTS model: {self.voices.get(self.target_lang, {}).get('fast_model', 'NOT CONFIGURED')} (VITS - simplified pipeline)")
+        else:
+            print(f"Standard TTS model: {self.voices.get(self.target_lang, {}).get('model', 'NOT CONFIGURED')} (XTTSv2 - full pipeline)")
         if self.save_local:
             print(f"Output directory: {self.output_dir}")
         print("=" * 60)
@@ -962,6 +1009,7 @@ def main():
     ap.add_argument("--output-dir", default="./processed_fragments", help="Directory for saved fragments")
     ap.add_argument("--whisper-model", default="base", help="Whisper model size")
     ap.add_argument("--device", default="cpu", help="Processing device")
+    ap.add_argument("--fast-tts", action="store_true", help="Use fast VITS models instead of XTTSv2")
     ap.add_argument("--no-cache", action="store_true", help="Disable caching")
     
     args = ap.parse_args()

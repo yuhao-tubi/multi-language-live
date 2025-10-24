@@ -1,6 +1,7 @@
 languages:
   es:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/es/css10/vits"  # Fast VITS model for performance testing
     multi_speaker: true
     speakers:
       JOE:
@@ -13,6 +14,7 @@ languages:
         voice_sample: "./voice_samples/joe_buck_voice_sample.wav"
   fr:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/fr/css10/vits"  # Fast VITS model for performance testing
     multi_speaker: true
     speakers:
       JOE:
@@ -26,6 +28,7 @@ languages:
         voice_sample: null
   de:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/de/css10/vits"  # Fast VITS model for performance testing
     multi_speaker: true
     speakers:
       JOE:
@@ -39,6 +42,7 @@ languages:
         voice_sample: null
   pt:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/pt/css10/vits"  # Fast VITS model for performance testing
     multi_speaker: true
     speakers:
       JOE:
@@ -52,6 +56,7 @@ languages:
         voice_sample: null
   zh:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/zh-CN/baker/tacotron2-DDC"  # Fast model for Chinese
     multi_speaker: true
     speakers:
       JOE:

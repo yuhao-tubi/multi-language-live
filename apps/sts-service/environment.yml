@@ -11,7 +11,7 @@ dependencies:
   # Machine Learning and NLP
   - pytorch
   - torchaudio
-  - transformers>=4.33.0,<4.41.0  # Compatible range for Coqui TTS 0.24–0.27
+  - transformers>=4.55.0  # Updated for Coqui TTS 0.27.2 compatibility
 
   # Configuration and utilities
   - pyyaml
@@ -22,9 +22,9 @@ dependencies:
 
   # Pip-only packages (not available in conda)
   - pip:
-      # IMPORTANT: Pin NumPy to 1.x for Coqui TTS 0.24.1 compatibility
+      # IMPORTANT: Pin NumPy to 1.x for Coqui TTS 0.27.2 compatibility
       - numpy<2.0.0
-      - coqui-tts==0.24.1
+      - coqui-tts==0.27.2
       
       # Audio & speech utilities
       - sounddevice
