@@ -17,7 +17,10 @@ const __dirname = path.dirname(__filename);
 const config: Config = getConfig();
 
 // Initialize logger
-initLogger(config.logging);
+initLogger({
+  ...config.logging,
+  logsPath: config.storage.logsPath,
+});
 const logger = getLogger();
 
 // Create Express app
