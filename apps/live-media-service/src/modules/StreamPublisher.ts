@@ -10,6 +10,7 @@ import path from 'path';
 import { Writable } from 'stream';
 import { RemuxedOutput } from '../types/index.js';
 import { getLogger } from '../utils/logger.js';
+import { FragmentChunker, FragmentChunkerConfig } from './FragmentChunker.js';
 
 let logger: ReturnType<typeof getLogger> | null = null;
 
@@ -37,6 +38,8 @@ export interface StreamPublisherConfig {
   enableCleanup?: boolean;
   /** Safety buffer: extra segments to keep beyond maxSegmentsToKeep (default: 5) */
   cleanupSafetyBuffer?: number;
+  /** Fragment chunker configuration for smooth stdin streaming */
+  chunkerConfig?: FragmentChunkerConfig;
 }
 
 /**
@@ -78,6 +81,9 @@ export class StreamPublisher extends EventEmitter {
   private enableCleanup: boolean;
   private cleanupSafetyBuffer: number;
   private publishedSegments: number[] = []; // Track published batch numbers
+  
+  // Fragment chunker for smooth streaming
+  private fragmentChunker: FragmentChunker;
 
   constructor(config: StreamPublisherConfig) {
     super();
@@ -104,7 +110,10 @@ export class StreamPublisher extends EventEmitter {
       }
     }
 
-    this.log('info', 'StreamPublisher initialized (stdin piping mode)');
+    // Initialize fragment chunker for smooth streaming
+    this.fragmentChunker = new FragmentChunker(config.chunkerConfig);
+
+    this.log('info', 'StreamPublisher initialized (stdin piping mode with chunked streaming)');
     if (this.enableCleanup) {
       const totalKept = this.maxSegmentsToKeep + this.cleanupSafetyBuffer;
       this.log('info', `Sliding window cleanup enabled:`);
@@ -214,7 +223,7 @@ export class StreamPublisher extends EventEmitter {
   }
 
   /**
-   * Publish a fragment by streaming it to FFmpeg stdin
+   * Publish a fragment by streaming it to FFmpeg stdin in chunks
    */
   async publishFragment(output: RemuxedOutput): Promise<void> {
     if (this.isReconnecting) {
@@ -228,15 +237,13 @@ export class StreamPublisher extends EventEmitter {
     }
 
     try {
-      this.log('debug', `Publishing fragment ${output.batchNumber} via stdin`);
+      this.log('debug', `Publishing fragment ${output.batchNumber} via stdin (chunked)`);
 
       // Verify fragment file exists
       if (!(await fs.pathExists(output.outputPath))) {
         throw new Error(`Fragment file does not exist: ${output.outputPath}`);
       }
 
-      // Read fragment data
-      const fragmentData = await fs.readFile(output.outputPath);
       const fragmentStats = await fs.stat(output.outputPath);
       
       this.log('debug', `Fragment ${output.batchNumber} details:`, {
@@ -245,15 +252,12 @@ export class StreamPublisher extends EventEmitter {
         exists: true
       });
 
-      // Write to stdin with backpressure handling
-      const canWrite = this.stdinStream.write(fragmentData);
-      
-      if (!canWrite) {
-        // Handle backpressure - wait for drain event
-        this.log('debug', `Backpressure detected, waiting for drain...`);
-        await once(this.stdinStream, 'drain');
-        this.log('debug', `Drain complete, continuing`);
-      }
+      // Stream fragment in chunks using FragmentChunker
+      await this.fragmentChunker.streamFragment(
+        output.outputPath,
+        this.stdinStream,
+        output.batchNumber
+      );
 
       this.publishedCount++;
       
@@ -294,6 +298,9 @@ export class StreamPublisher extends EventEmitter {
       // Input from stdin
       '-re',                              // Read input at native frame rate
       '-f', 'mp4',                        // Input format is MP4 (fragmented)
+      '-fflags', '+genpts', 
+      '-copyts',
+      '-start_at_zero',
       '-i', 'pipe:0',                     // Read from stdin
       // Copy codecs (fragments are already encoded properly)
       '-c:v', 'copy',                     // Copy video codec
@@ -526,6 +533,10 @@ export class StreamPublisher extends EventEmitter {
         this.ffmpegProcess = null;
         this.log('debug', `Old FFmpeg process killed`);
       }
+
+      // Clear FragmentChunker queue to remove any pending tasks with old stdin stream
+      this.log('info', '🔄 Clearing FragmentChunker queue before reconnection...');
+      this.fragmentChunker.clearQueue();
 
       // Wait before reconnecting
       this.log('debug', `Waiting ${this.reconnectDelayMs}ms before reconnecting...`);
