@@ -76,28 +76,28 @@ describe('StorageService', () => {
       const path = storageService.getVideoPath('stream-1', 5);
       expect(path).toContain('processed_fragments/video');
       expect(path).toContain('stream-1');
-      expect(path).toContain('batch-5.fmp4');
+      expect(path).toContain('batch-5.mp4');
     });
 
     it('should return correct audio path', () => {
       const path = storageService.getAudioPath('stream-1', 5);
       expect(path).toContain('processed_fragments/audio');
       expect(path).toContain('stream-1');
-      expect(path).toContain('batch-5.fmp4');
+      expect(path).toContain('batch-5.mp4');
     });
 
     it('should return correct processed audio path', () => {
       const path = storageService.getProcessedAudioPath('stream-1', 5);
       expect(path).toContain('processed_fragments/processed_audio');
       expect(path).toContain('stream-1');
-      expect(path).toContain('batch-5.fmp4');
+      expect(path).toContain('batch-5.mp4');
     });
 
     it('should return correct output path', () => {
       const path = storageService.getOutputPath('stream-1', 5);
       expect(path).toContain('processed_fragments/output');
       expect(path).toContain('stream-1');
-      expect(path).toContain('batch-5.fmp4');
+      expect(path).toContain('batch-5.mp4');
     });
   });
 

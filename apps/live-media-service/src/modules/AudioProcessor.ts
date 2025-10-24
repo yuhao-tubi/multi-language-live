@@ -138,7 +138,7 @@ export class AudioProcessor extends EventEmitter {
     await this.storageService.ensureDir(videoPath);
     await this.storageService.ensureDir(audioPath);
 
-    // FFmpeg command to demux TS → video.fmp4 + audio.fmp4
+    // FFmpeg command to demux TS → video.mp4 + audio.mp4
     const ffmpegArgs = [
       '-i', inputPath,
       // Video output
@@ -150,6 +150,7 @@ export class AudioProcessor extends EventEmitter {
       // Audio output
       '-map', '0:a',
       '-c:a', 'copy',
+      '-bsf:a', 'aac_adtstoasc', // Convert AAC from ADTS to ASC for MP4
       '-f', 'mp4',
       '-movflags', 'frag_keyframe+empty_moov',
       audioPath,

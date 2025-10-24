@@ -4,7 +4,7 @@
  */
 import { EventEmitter } from 'events';
 import axios from 'axios';
-import Parser from 'm3u8-parser';
+import * as m3u8Parser from 'm3u8-parser';
 import { SegmentMetadata, SegmentBatch } from '../types/index.js';
 import { BufferManager } from '../services/buffer-manager.service.js';
 import { StorageService } from '../services/storage.service.js';
@@ -154,7 +154,7 @@ export class StreamFetcher extends EventEmitter {
     });
 
     // Parse manifest
-    const parser = new Parser.Parser();
+    const parser = new m3u8Parser.Parser();
     parser.push(response.data);
     parser.end();
 

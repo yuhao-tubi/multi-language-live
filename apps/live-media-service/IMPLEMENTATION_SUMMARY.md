@@ -42,7 +42,7 @@ A production-ready Node.js service for processing live HLS streams with real-tim
 **Status:** Complete
 
 - ✅ TS segment concatenation
-- ✅ FFmpeg demux (TS → video.fmp4 + audio.fmp4)
+- ✅ FFmpeg demux (TS → video.mp4 + audio.mp4)
 - ✅ WebSocket client integration
 - ✅ Fragment metadata protocol
 - ✅ Processed audio reception handler

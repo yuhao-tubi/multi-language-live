@@ -8,10 +8,48 @@ import fs from 'fs-extra';
 const { combine, timestamp, printf, colorize, json, errors } = winston.format;
 
 /**
+ * Safe JSON stringify that handles circular references and errors
+ */
+function safeStringify(obj: any, indent: number = 2): string {
+  const seen = new WeakSet();
+  
+  return JSON.stringify(obj, (_key, value) => {
+    // Handle null and undefined
+    if (value === null || value === undefined) {
+      return value;
+    }
+    
+    // Handle Error objects specially
+    if (value instanceof Error) {
+      const errorObj: Record<string, any> = {
+        name: value.name,
+        message: value.message,
+        stack: value.stack,
+      };
+      if (value.cause) {
+        errorObj.cause = value.cause;
+      }
+      return errorObj;
+    }
+    
+    // Handle objects (but not primitives)
+    if (typeof value === 'object') {
+      // Check for circular reference
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+    
+    return value;
+  }, indent);
+}
+
+/**
  * Custom log format for console output
  */
 const consoleFormat = printf(({ level, message, timestamp, ...meta }) => {
-  const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
+  const metaStr = Object.keys(meta).length ? safeStringify(meta, 2) : '';
   return `${timestamp} [${level}]: ${message} ${metaStr}`;
 });
 

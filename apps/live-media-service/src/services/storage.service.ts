@@ -88,28 +88,35 @@ export class StorageService {
    * Get path for video fragment
    */
   getVideoPath(streamId: string, batchNumber: number): string {
-    return path.join(this.processedFragmentsPath, 'video', streamId, `batch-${batchNumber}.fmp4`);
+    return path.join(this.processedFragmentsPath, 'video', streamId, `batch-${batchNumber}.mp4`);
   }
 
   /**
    * Get path for audio fragment
    */
   getAudioPath(streamId: string, batchNumber: number): string {
-    return path.join(this.processedFragmentsPath, 'audio', streamId, `batch-${batchNumber}.fmp4`);
+    return path.join(this.processedFragmentsPath, 'audio', streamId, `batch-${batchNumber}.mp4`);
   }
 
   /**
    * Get path for processed audio
    */
   getProcessedAudioPath(streamId: string, batchNumber: number): string {
-    return path.join(this.processedFragmentsPath, 'processed_audio', streamId, `batch-${batchNumber}.fmp4`);
+    return path.join(this.processedFragmentsPath, 'processed_audio', streamId, `batch-${batchNumber}.mp4`);
   }
 
   /**
    * Get path for remuxed output
    */
   getOutputPath(streamId: string, batchNumber: number): string {
-    return path.join(this.processedFragmentsPath, 'output', streamId, `batch-${batchNumber}.fmp4`);
+    return path.join(this.processedFragmentsPath, 'output', streamId, `batch-${batchNumber}.mp4`);
+  }
+
+  /**
+   * Get output directory for a stream (where batch files are stored)
+   */
+  getOutputDirectory(streamId: string): string {
+    return path.join(this.processedFragmentsPath, 'output', streamId);
   }
 
   /**

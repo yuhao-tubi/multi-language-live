@@ -107,16 +107,19 @@ export class Remuxer extends EventEmitter {
     const outputPath = this.storageService.getOutputPath(this.config.streamId, batchNumber);
     await this.storageService.ensureDir(outputPath);
 
-    // FFmpeg command to remux video + audio → output.fmp4
+    // FFmpeg command to remux video + audio → output.mp4
+    // Since both are demuxed from the same source, they should already be in sync
     const ffmpegArgs = [
       '-i', videoPath,
       '-i', audioPath,
-      // Map video from first input
+      // Map both streams
       '-map', '0:v',
-      '-c:v', 'copy',
-      // Map audio from second input
       '-map', '1:a',
+      // Copy both streams without re-encoding
+      '-c:v', 'copy',
       '-c:a', 'copy',
+      // Use shortest stream as safeguard (in case of any drift)
+      '-shortest',
       // Output format
       '-f', 'mp4',
       '-movflags', 'frag_keyframe+empty_moov',

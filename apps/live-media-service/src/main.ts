@@ -9,6 +9,8 @@ import { getConfig, Config } from './utils/config.js';
 import { initLogger, getLogger } from './utils/logger.js';
 import { PipelineOrchestrator } from './modules/PipelineOrchestrator.js';
 import { PipelineConfig } from './types/index.js';
+import { getEpgProgramming, getManifestUrl, getManifestUrlByContentId } from './services/tubi-epg.service.js';
+import { clearTubiTokenCache } from './services/tubi-auth.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -213,6 +215,138 @@ app.post('/api/storage/clean', async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error('Failed to clean storage:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+    });
+  }
+});
+
+/**
+ * Get Tubi EPG manifest URL
+ */
+app.get('/api/tubi/manifest', async (req: Request, res: Response) => {
+  try {
+    const contentId = req.query.contentId as string;
+
+    if (!contentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentId query parameter is required',
+      });
+    }
+
+    logger.info(`Fetching Tubi manifest for content ID: ${contentId}`);
+
+    // Get full programming data
+    const programming = await getEpgProgramming({
+      contentId,
+      platform: (req.query.platform as string) || 'amazon',
+      deviceId: (req.query.deviceId as string) || undefined,
+      limitResolutions: req.query.limitResolutions
+        ? (req.query.limitResolutions as string).split(',')
+        : undefined,
+    });
+
+    if (!programming) {
+      return res.status(404).json({
+        success: false,
+        error: 'Failed to fetch EPG programming data',
+      });
+    }
+
+    // Extract manifest URL
+    const manifestUrl = getManifestUrl(programming);
+
+    if (!manifestUrl) {
+      return res.status(404).json({
+        success: false,
+        error: 'No manifest URL found in programming data',
+      });
+    }
+
+    const firstRow = programming.rows[0];
+    const videoResource = firstRow.video_resources[0];
+
+    logger.info(`Successfully fetched manifest URL: ${manifestUrl}`);
+
+    res.json({
+      success: true,
+      manifestUrl,
+      videoResource: {
+        type: videoResource.type,
+        resolution: videoResource.resolution,
+        codec: videoResource.codec,
+        duration: videoResource.manifest.duration,
+      },
+      contentInfo: {
+        contentId: firstRow.content_id,
+        title: firstRow.title,
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to get Tubi manifest:', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+    });
+  }
+});
+
+/**
+ * Quick manifest URL fetch (simplified endpoint)
+ */
+app.get('/api/tubi/manifest/quick', async (req: Request, res: Response) => {
+  try {
+    const contentId = req.query.contentId as string;
+
+    if (!contentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentId query parameter is required',
+      });
+    }
+
+    logger.info(`Quick fetching Tubi manifest for content ID: ${contentId}`);
+
+    const manifestUrl = await getManifestUrlByContentId(contentId);
+
+    if (!manifestUrl) {
+      return res.status(404).json({
+        success: false,
+        error: 'Failed to fetch manifest URL',
+      });
+    }
+
+    logger.info(`Successfully fetched manifest URL: ${manifestUrl}`);
+
+    res.json({
+      success: true,
+      manifestUrl,
+    });
+  } catch (error) {
+    logger.error('Failed to get Tubi manifest (quick):', error);
+    res.status(500).json({
+      success: false,
+      error: (error as Error).message,
+    });
+  }
+});
+
+/**
+ * Clear Tubi token cache (for testing/debugging)
+ */
+app.post('/api/tubi/clear-cache', (req: Request, res: Response) => {
+  try {
+    clearTubiTokenCache();
+    logger.info('Tubi token cache cleared');
+
+    res.json({
+      success: true,
+      message: 'Token cache cleared successfully',
+    });
+  } catch (error) {
+    logger.error('Failed to clear token cache:', error);
     res.status(500).json({
       success: false,
       error: (error as Error).message,

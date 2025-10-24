@@ -246,6 +246,43 @@
       </div>
     </div>
 
+    <!-- Tubi EPG Panel -->
+    <div class="card">
+      <h2>📺 Tubi EPG - Get Manifest URL</h2>
+      <form id="tubi-form">
+        <div class="form-group">
+          <label for="content-id">Content ID *</label>
+          <input
+            type="text"
+            id="content-id"
+            placeholder="400000157"
+            value="400000157"
+            required
+          />
+        </div>
+        <div class="button-group">
+          <button type="submit" class="btn btn-primary" id="fetch-manifest-btn">
+            🔍 Fetch Manifest URL
+          </button>
+        </div>
+      </form>
+      <div id="manifest-result" style="display: none; margin-top: 20px;">
+        <div class="alert alert-info">
+          <strong>✅ Manifest URL:</strong>
+          <div style="margin-top: 8px; word-break: break-all;">
+            <a id="manifest-url-link" href="#" target="_blank" style="color: #1e40af; text-decoration: underline;"></a>
+          </div>
+          <div style="margin-top: 12px; font-size: 0.875rem;">
+            <strong>Content:</strong> <span id="content-title"></span><br>
+            <strong>Type:</strong> <span id="video-type"></span> | 
+            <strong>Resolution:</strong> <span id="video-resolution"></span> | 
+            <strong>Codec:</strong> <span id="video-codec"></span> | 
+            <strong>Duration:</strong> <span id="video-duration"></span>s
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Control Panel -->
     <div class="card">
       <h2>Pipeline Control</h2>
@@ -319,6 +356,18 @@
     const streamIdInput = document.getElementById('stream-id');
     const bufferDurationInput = document.getElementById('buffer-duration');
     const audioProcessorUrlInput = document.getElementById('audio-processor-url');
+
+    // Get Tubi form elements
+    const tubiForm = document.getElementById('tubi-form');
+    const fetchManifestBtn = document.getElementById('fetch-manifest-btn');
+    const contentIdInput = document.getElementById('content-id');
+    const manifestResult = document.getElementById('manifest-result');
+    const manifestUrlLink = document.getElementById('manifest-url-link');
+    const contentTitle = document.getElementById('content-title');
+    const videoType = document.getElementById('video-type');
+    const videoResolution = document.getElementById('video-resolution');
+    const videoCodec = document.getElementById('video-codec');
+    const videoDuration = document.getElementById('video-duration');
 
     // Get status elements
     const pipelineStatus = document.getElementById('pipeline-status');
@@ -500,6 +549,55 @@
 
     // Initial status fetch
     fetchStatus();
+
+    // Fetch Tubi manifest URL
+    tubiForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const contentId = contentIdInput.value;
+
+      if (!contentId) {
+        addLog('error', 'Please enter a content ID');
+        return;
+      }
+
+      try {
+        fetchManifestBtn.disabled = true;
+        fetchManifestBtn.textContent = '⏳ Fetching...';
+        manifestResult.style.display = 'none';
+        addLog('info', `Fetching Tubi manifest for content ID: ${contentId}`);
+
+        const response = await fetch(`${API_BASE}/tubi/manifest?contentId=${encodeURIComponent(contentId)}`);
+        const data = await response.json();
+
+        if (data.success) {
+          // Update UI with manifest data
+          manifestUrlLink.href = data.manifestUrl;
+          manifestUrlLink.textContent = data.manifestUrl;
+          contentTitle.textContent = data.contentInfo.title;
+          videoType.textContent = data.videoResource.type;
+          videoResolution.textContent = data.videoResource.resolution || 'N/A';
+          videoCodec.textContent = data.videoResource.codec || 'N/A';
+          videoDuration.textContent = data.videoResource.duration || 'N/A';
+
+          manifestResult.style.display = 'block';
+          addLog('success', `✅ Manifest URL fetched successfully!`);
+          addLog('info', `URL: ${data.manifestUrl}`);
+
+          // Auto-populate the source URL field
+          sourceUrlInput.value = data.manifestUrl;
+          addLog('info', '💡 Manifest URL copied to Pipeline Source URL field');
+        } else {
+          throw new Error(data.error || 'Failed to fetch manifest');
+        }
+      } catch (error) {
+        addLog('error', `Failed to fetch manifest: ${error.message}`);
+        showError(error.message);
+      } finally {
+        fetchManifestBtn.disabled = false;
+        fetchManifestBtn.textContent = '🔍 Fetch Manifest URL';
+      }
+    });
   </script>
 </body>
 </html>

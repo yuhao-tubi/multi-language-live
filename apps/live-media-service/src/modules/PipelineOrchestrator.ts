@@ -107,6 +107,8 @@ export class PipelineOrchestrator extends EventEmitter {
     this.streamPublisher = new StreamPublisher({
       streamId: config.streamId,
       srsRtmpUrl: config.srsRtmpUrl,
+      storagePath: config.storagePath,
+      outputDirectory: this.storageService.getOutputDirectory(config.streamId),
     });
 
     // Set up event handlers
@@ -266,6 +268,20 @@ export class PipelineOrchestrator extends EventEmitter {
       this.log('info', `📡 Published: batch ${batchNumber}`);
       this.stats.fragmentsPublished++;
       this.currentPhase = 'fetching'; // Back to waiting for next batch
+      this.emitStatusUpdate();
+    });
+
+    this.streamPublisher.on('reconnecting', (attempt) => {
+      this.log('warn', `🔄 Publisher reconnecting (attempt ${attempt})`);
+      this.currentPhase = 'error';
+      this.lastError = `Publisher reconnecting (attempt ${attempt})`;
+      this.emitStatusUpdate();
+    });
+
+    this.streamPublisher.on('reconnected', () => {
+      this.log('info', '✅ Publisher reconnected successfully');
+      this.currentPhase = 'publishing';
+      this.lastError = null;
       this.emitStatusUpdate();
     });
 
