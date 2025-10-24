@@ -217,22 +217,68 @@ export class FragmentChunker extends EventEmitter {
           // Check stdin state before writing
           this.log('debug', `  📊 Stdin state before write: writable=${stdinStream.writable}, destroyed=${stdinStream.destroyed}`);
 
+          // Abort if stdin is no longer writable or destroyed
+          if (!stdinStream.writable || stdinStream.destroyed) {
+            const error = new Error(`stdin is not writable (destroyed=${stdinStream.destroyed})`);
+            this.log('error', `  ❌ Cannot write chunk ${chunkNumber}: stdin unavailable`);
+            throw error;
+          }
+
           // Write chunk to stdin with backpressure handling
           this.log('info', `  ✍️  Writing chunk ${chunkNumber} to stdin (${this.formatBytes(chunkSize)})...`);
           const canWrite = stdinStream.write(chunk);
           const writeTime = Date.now() - chunkStartTime;
 
           if (!canWrite) {
-            // Wait for drain event before continuing
+            // Wait for drain event before continuing (with timeout and error handling)
             this.log('warn', `  🚰 Chunk ${chunkNumber}: backpressure detected (write returned false), waiting for drain...`);
             const drainStartTime = Date.now();
-            await new Promise<void>((resolveDrain) => {
-              stdinStream.once('drain', () => {
-                const drainTime = Date.now() - drainStartTime;
-                this.log('info', `  ✅ Chunk ${chunkNumber}: drain complete (waited ${drainTime}ms)`);
-                resolveDrain();
-              });
-            });
+            
+            try {
+              await Promise.race([
+                // Wait for drain event
+                new Promise<void>((resolveDrain, rejectDrain) => {
+                  const onDrain = () => {
+                    cleanup();
+                    const drainTime = Date.now() - drainStartTime;
+                    this.log('info', `  ✅ Chunk ${chunkNumber}: drain complete (waited ${drainTime}ms)`);
+                    resolveDrain();
+                  };
+                  
+                  const onError = (err: Error) => {
+                    cleanup();
+                    this.log('error', `  ❌ Chunk ${chunkNumber}: stdin error during drain wait:`, err);
+                    rejectDrain(err);
+                  };
+                  
+                  const onClose = () => {
+                    cleanup();
+                    const err = new Error('stdin closed while waiting for drain');
+                    this.log('error', `  ❌ Chunk ${chunkNumber}: stdin closed during drain wait`);
+                    rejectDrain(err);
+                  };
+                  
+                  const cleanup = () => {
+                    stdinStream.removeListener('drain', onDrain);
+                    stdinStream.removeListener('error', onError);
+                    stdinStream.removeListener('close', onClose);
+                  };
+                  
+                  stdinStream.once('drain', onDrain);
+                  stdinStream.once('error', onError);
+                  stdinStream.once('close', onClose);
+                }),
+                // Timeout after 30 seconds
+                new Promise<never>((_, reject) => {
+                  setTimeout(() => {
+                    reject(new Error(`Drain timeout after 30s for chunk ${chunkNumber}`));
+                  }, 30000);
+                })
+              ]);
+            } catch (error) {
+              this.log('error', `  ❌ Chunk ${chunkNumber}: drain wait failed:`, error);
+              throw error;
+            }
           } else {
             this.log('debug', `  ✅ Chunk ${chunkNumber}: write succeeded immediately (${writeTime}ms)`);
           }
@@ -249,8 +295,16 @@ export class FragmentChunker extends EventEmitter {
           readStream.resume();
           this.log('debug', `  ▶️  Read stream resumed after chunk ${chunkNumber}`);
         } catch (error) {
+          const err = error as NodeJS.ErrnoException;
           this.log('error', `❌ Error writing chunk ${chunkNumber} to stdin:`, error);
+          
+          // EPIPE means the receiving end (FFmpeg) is gone - this is expected during reconnection
+          if (err.code === 'EPIPE') {
+            this.log('warn', `  Broken pipe detected - FFmpeg stdin closed (likely process died or reconnecting)`);
+          }
+          
           readStream.destroy();
+          processingChunk = false;
           reject(error);
         }
       };

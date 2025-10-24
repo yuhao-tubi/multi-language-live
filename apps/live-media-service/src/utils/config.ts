@@ -52,11 +52,18 @@ export interface Config {
     path: string;
     logLevel: string;
   };
+  streaming: {
+    chunkSizeKB: number;
+    stdinBufferSizeMB: number;
+    maxSegmentsToKeep: number;
+    enableCleanup: boolean;
+  };
   logging: {
     level: string;
     format: 'json' | 'simple';
     toFile: boolean;
     toConsole: boolean;
+    moduleFilter?: string[];
   };
 }
 
@@ -102,11 +109,20 @@ export function loadConfig(): Config {
       path: process.env.FFMPEG_PATH || '/usr/local/bin/ffmpeg',
       logLevel: process.env.FFMPEG_LOG_LEVEL || 'error',
     },
+    streaming: {
+      chunkSizeKB: parseInt(process.env.CHUNK_SIZE_KB || '1024', 10),
+      stdinBufferSizeMB: parseInt(process.env.STDIN_BUFFER_SIZE_MB || '2', 10),
+      maxSegmentsToKeep: parseInt(process.env.MAX_SEGMENTS_TO_KEEP || '3', 10),
+      enableCleanup: process.env.ENABLE_SEGMENT_CLEANUP !== 'false',
+    },
     logging: {
       level: process.env.LOG_LEVEL || 'info',
       format: (process.env.LOG_FORMAT === 'json' ? 'json' : 'simple') as 'json' | 'simple',
       toFile: process.env.LOG_TO_FILE !== 'false',
       toConsole: process.env.LOG_TO_CONSOLE !== 'false',
+      moduleFilter: process.env.LOG_MODULE_FILTER 
+        ? process.env.LOG_MODULE_FILTER.split(',').map(m => m.trim()).filter(m => m.length > 0)
+        : undefined,
     },
   };
 }
