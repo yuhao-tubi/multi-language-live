@@ -22,6 +22,7 @@ import time
 import json
 import numpy as np
 import socketio
+from flask import Flask
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any
 import yaml
@@ -62,28 +63,29 @@ from utils.voice_management import setup_voice_samples
 class LiveStreamProcessor:
     """
     Main processor for live audio stream with real-time transcription and translation
+    Now acts as a Socket.IO server instead of client
     """
     
     def __init__(self, args):
         print(f"Initializing LiveStreamProcessor with args: {args}")
         self.args = args
         self.targets = [t.strip() for t in args.targets.split(",") if t.strip()]
-        self.server_url = args.server_url
-        self.stream_id = args.stream_id
+        self.host = args.host
+        self.port = args.port
         self.save_local = args.save_local
         self.output_dir = Path(args.output_dir)
         
-        # Socket.IO client
-        self.sio = socketio.Client()
-        self.connected = False
-        self.subscribed = False
+        # Socket.IO server
+        self.app = Flask(__name__)
+        self.sio = socketio.Server(cors_allowed_origins="*")
+        self.app.wsgi_app = socketio.WSGIApp(self.sio, self.app)
+        self.connected_clients = {}  # Track connected clients
         
         # Processing state
         self.running = False
         self.fragment_count = 0
         self.processed_count = 0
         self.failed_count = 0
-        self.total_fragments_expected = 0
         
         # Pre-loaded models
         self.whisper_model = None
@@ -111,116 +113,56 @@ class LiveStreamProcessor:
     def _setup_output_directory(self):
         """Setup output directory structure for local saving"""
         for target_lang in self.targets:
-            lang_dir = self.output_dir / self.stream_id / target_lang
+            lang_dir = self.output_dir / target_lang
             lang_dir.mkdir(parents=True, exist_ok=True)
             print(f"Created output directory: {lang_dir}")
     
     def _setup_socket_handlers(self):
-        """Setup Socket.IO event handlers"""
+        """Setup Socket.IO server event handlers"""
         
         @self.sio.event
-        def connect():
-            print(f"✓ Connected to server: {self.server_url}")
-            print(f"Socket ID: {self.sio.sid}")
-            self.connected = True
-            
-            # Subscribe to stream
-            print(f"→ Subscribing to stream: {self.stream_id}")
-            self.sio.emit('subscribe', {'streamId': self.stream_id})
+        def connect(sid, environ):
+            print(f"✓ Client connected: {sid}")
+            self.connected_clients[sid] = {
+                'connected_at': time.time(),
+                'fragments_received': 0,
+                'fragments_processed': 0
+            }
+            print(f"   Total clients: {len(self.connected_clients)}")
         
         @self.sio.event
-        def subscribed(data):
-            print(f"✓ Successfully subscribed to stream: {data['streamId']}")
-            print("Waiting for fragments...\n")
-            self.subscribed = True
+        def disconnect(sid):
+            print(f"✓ Client disconnected: {sid}")
+            if sid in self.connected_clients:
+                client_stats = self.connected_clients[sid]
+                print(f"   Client stats: {client_stats['fragments_received']} received, {client_stats['fragments_processed']} processed")
+                del self.connected_clients[sid]
+            print(f"   Remaining clients: {len(self.connected_clients)}")
         
         @self.sio.on('fragment:data')
-        def fragment_data(delivery):
-            """Handle incoming audio fragment"""
+        def fragment_data(sid, delivery):
+            """Handle incoming audio fragment from client"""
             fragment = delivery['fragment']
             data = delivery['data']
             
             self.fragment_count += 1
             
-            print(f"📦 Fragment {self.fragment_count} Received:")
-            print(f"  ID: {fragment['id']}")
-            print(f"  Sequence: {fragment['sequenceNumber']}")
-            print(f"  Size: {len(data):,} bytes ({len(data) / 1024:.2f} KB)")
-            print(f"  Codec: {fragment['codec']}")
-            print(f"  Sample Rate: {fragment['sampleRate']} Hz")
-            print(f"  Channels: {fragment['channels']}")
-            print(f"  Duration: {fragment['duration']}ms")
+            # Update client stats
+            if sid in self.connected_clients:
+                self.connected_clients[sid]['fragments_received'] += 1
             
-            # Acknowledge receipt IMMEDIATELY to avoid timeout
-            self.sio.emit('fragment:ack', {'fragmentId': fragment['id']})
-            print(f"  ✓ Acknowledged immediately")
+            print(f"📦 Fragment {self.fragment_count} Received from {sid}:")
+            print(f"  ID: {fragment['id']}")
+            print(f"  Stream: {fragment['streamId']}")
+            print(f"  Batch: {fragment['batchNumber']}")
+            print(f"  Size: {len(data):,} bytes ({len(data) / 1024:.2f} KB)")
+            print(f"  Duration: {fragment['duration']}s")
             
             # Add to processing queue for background processing
-            self.processing_queue.put((fragment, data))
+            # Include sid so we can send response back to correct client
+            self.processing_queue.put((sid, fragment, data))
             print(f"  → Added to processing queue")
-        
-        @self.sio.on('stream:complete')
-        def stream_complete(data):
-            print("=" * 60)
-            print(f"✓ Stream completed: {data['streamId']}")
-            print(f"  Total fragments received: {self.fragment_count}")
-            print(f"  Successfully processed: {self.processed_count}")
-            print(f"  Failed processing: {self.failed_count}")
-            print("=" * 60)
-            
-            # Wait for processing to complete
-            self._wait_for_processing_complete()
-            
-            # Disconnect
-            try:
-                self.sio.disconnect()
-            except Exception as e:
-                print(f"Warning: Error during disconnect: {e}")
-        
-        @self.sio.on('error')
-        def error(error_data):
-            print(f"✗ Error: {error_data}")
-            if 'availableStreams' in error_data:
-                print(f"Available streams: {error_data['availableStreams']}")
-        
-        @self.sio.on('disconnect')
-        def disconnect():
-            if self.connected:  # Only print once
-                print(f"✓ Disconnected from server")
-            self.connected = False
-            # Don't set self.running = False here - let processing continue
     
-    def _wait_for_processing_complete(self):
-        """Wait for all fragments to be processed"""
-        print("Waiting for processing to complete...")
-        
-        # Wait for processing queue to empty
-        timeout = 60  # 60 second timeout (increased from 30)
-        start_time = time.time()
-        
-        while not self.processing_queue.empty():
-            if time.time() - start_time > timeout:
-                print("ERROR: Timeout waiting for processing queue to empty")
-                break
-            time.sleep(0.1)
-        
-        # Wait for all fragments to actually be processed
-        total_expected = self.fragment_count
-        print(f"Waiting for {total_expected} fragments to complete processing...")
-        while (self.processed_count + self.failed_count) < total_expected:
-            if time.time() - start_time > timeout:
-                print(f"ERROR: Timeout waiting for processing to complete. Expected: {total_expected}, Processed: {self.processed_count}, Failed: {self.failed_count}")
-                print(f"Queue size: {self.processing_queue.qsize()}")
-                break
-            print(f"Waiting... Processed: {self.processed_count}, Failed: {self.failed_count}, Expected: {total_expected}, Queue: {self.processing_queue.qsize()}")
-            time.sleep(1)
-        
-        # Wait for processing thread to finish current work
-        if self.processing_thread and self.processing_thread.is_alive():
-            print("Waiting for processing thread to finish...")
-            self.processing_thread.join(timeout=30)  # Wait up to 30 more seconds
-        
-        print("✓ Processing complete!")
     
     def _preload_models(self):
         """Preload all models before starting"""
@@ -309,11 +251,12 @@ class LiveStreamProcessor:
             print(f"ERROR: Model verification failed: {e}")
             return False
     
-    def _process_fragment(self, fragment: Dict[str, Any], data: bytes) -> Optional[bytes]:
+    def _process_fragment(self, sid: str, fragment: Dict[str, Any], data: bytes) -> Optional[bytes]:
         """
         Process a single audio fragment through the full pipeline
         
         Args:
+            sid: Socket ID of the client that sent the fragment
             fragment: Fragment metadata
             data: Binary audio data (m4s format)
             
@@ -323,10 +266,14 @@ class LiveStreamProcessor:
         try:
             # Extract audio from m4s data using ffmpeg
             # m4s files are MPEG-4 audio containers that need proper parsing
-            sample_rate = fragment['sampleRate']
-            duration = fragment['duration'] / 1000.0  # Convert ms to seconds
+            # Handle both client and server fragment formats
+            sample_rate = fragment.get('sampleRate', 44100)  # Default to 44100 if not present
+            duration = fragment.get('duration', 30)  # Default to 30 seconds if not present
+            if isinstance(duration, (int, float)) and duration > 100:  # Likely in milliseconds
+                duration = duration / 1000.0
             
-            print(f"Processing fragment {fragment['sequenceNumber']}...")
+            fragment_id = fragment.get('id', 'unknown')
+            print(f"Processing fragment {fragment_id}...")
             print(f"Extracting audio from m4s data: {len(data)} bytes")
             
             # Save m4s data to temporary file
@@ -558,10 +505,14 @@ class LiveStreamProcessor:
                     
                     # Calculate required speed to match original duration
                     required_speed = baseline_duration / original_duration
-                    # Clamp speed to reasonable range (0.5x to 3.0x)
-                    required_speed = max(0.5, min(3.0, required_speed))
+                    # Only speed up audio, never slow down (minimum 1.0x speed)
+                    required_speed = max(1.0, min(3.0, required_speed))
                     
                     print(f"  Required speed adjustment: {required_speed:.2f}x")
+                    if required_speed > 1.0:
+                        print(f"  → Speeding up audio to match original duration")
+                    else:
+                        print(f"  → No speed adjustment needed (TTS duration already matches)")
                     
                     # Apply speed adjustment via post-processing using Rubber Band
                     wav_path = self._adjust_audio_speed(temp_wav, wav_path, required_speed)
@@ -600,8 +551,9 @@ class LiveStreamProcessor:
                     self.processed_sample_rate = sample_rate
                 
                 # Save individual processed audio chunk for verification
-                chunk_filename = f"processed_chunk_{fragment['sequenceNumber']:03d}_{target_lang}.wav"
-                chunk_path = self.output_dir / self.stream_id / target_lang / chunk_filename
+                fragment_id = fragment.get('id', 'unknown').replace('/', '_').replace(':', '_')
+                chunk_filename = f"processed_chunk_{fragment_id}_{target_lang}.wav"
+                chunk_path = self.output_dir / target_lang / chunk_filename
                 chunk_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 import soundfile as sf
@@ -634,7 +586,7 @@ class LiveStreamProcessor:
                                format='mp4',
                                acodec='aac',
                                ar=sample_rate,
-                               ac=fragment['channels'],
+                               ac=fragment.get('channels', 1),
                                movflags='frag_keyframe+empty_moov')
                         .run(input=wav_data, capture_stdout=True, quiet=True)
                     )
@@ -667,8 +619,9 @@ class LiveStreamProcessor:
         """Save processed fragment locally"""
         try:
             # Create filename
-            filename = f"fragment-{fragment['sequenceNumber']}.m4s"
-            output_path = self.output_dir / self.stream_id / target_lang / filename
+            fragment_id = fragment.get('id', 'unknown')
+            filename = f"fragment-{fragment_id}.m4s"
+            output_path = self.output_dir / target_lang / filename
             
             # Save audio data
             with open(output_path, 'wb') as f:
@@ -677,7 +630,7 @@ class LiveStreamProcessor:
             # Save metadata
             metadata = {
                 'fragment_id': fragment['id'],
-                'sequence_number': fragment['sequenceNumber'],
+                'sequence_number': fragment.get('sequenceNumber', fragment.get('batchNumber', 'unknown')),
                 'target_language': target_lang,
                 'processed_at': time.time(),
                 'original_metadata': fragment,
@@ -698,45 +651,46 @@ class LiveStreamProcessor:
         print("Processing worker started")
         while self.running:
             try:
-                fragment, data = self.processing_queue.get(timeout=1.0)
-                print(f"Processing worker: Starting fragment {fragment['sequenceNumber']}")
+                sid, fragment, data = self.processing_queue.get(timeout=1.0)
+                fragment_id = fragment.get('id', 'unknown')
+                print(f"Processing worker: Starting fragment {fragment_id} for client {sid}")
                 
                 # Process the fragment
-                processed_data = self._process_fragment(fragment, data)
+                processed_data = self._process_fragment(sid, fragment, data)
                 
                 if processed_data is not None:
-                    # Send processed fragment back to server
+                    # Send processed fragment back to the specific client
                     try:
                         self.sio.emit('fragment:processed', {
                             'fragment': fragment,
-                            'data': processed_data
-                        })
-                        print(f"✓ Sent processed fragment {fragment['sequenceNumber']}")
+                            'data': processed_data,
+                            'metadata': {
+                                'processingTime': 0,  # Could calculate actual time
+                                'processor': 'sts-service',
+                                'timestamp': time.time()
+                            }
+                        }, room=sid)
+                        print(f"✓ Sent processed fragment {fragment_id} to client {sid}")
                         self.processed_count += 1
+                        
+                        # Update client stats
+                        if sid in self.connected_clients:
+                            self.connected_clients[sid]['fragments_processed'] += 1
+                            
                     except Exception as e:
                         print(f"ERROR: Failed to send processed fragment: {e}")
                         self.failed_count += 1
                 else:
-                    print(f"✗ Failed to process fragment {fragment['sequenceNumber']}")
+                    print(f"✗ Failed to process fragment {fragment_id}")
                     self.failed_count += 1
                 
                 # Debug: Show processing status
-                print(f"Fragment {fragment['sequenceNumber']} completed. Queue: {self.processing_queue.qsize()}, Processed: {self.processed_count}, Failed: {self.failed_count}, Expected: {self.fragment_count}")
+                print(f"Fragment {fragment_id} completed. Queue: {self.processing_queue.qsize()}, Processed: {self.processed_count}, Failed: {self.failed_count}")
                 
                 print()  # Empty line between fragments
                 
             except queue.Empty:
-                # Check if we should stop (no more fragments expected and queue is empty)
-                print(f"Queue empty timeout - Connected: {self.connected}, Queue size: {self.processing_queue.qsize()}")
-                if not self.connected and self.processing_queue.empty():
-                    # Double-check: make sure we've processed all expected fragments
-                    if (self.processed_count + self.failed_count) >= self.fragment_count and self.fragment_count > 0:
-                        print(f"All fragments processed ({self.processed_count + self.failed_count}/{self.fragment_count}), stopping worker")
-                        break
-                    else:
-                        print(f"Queue empty but not all fragments processed ({self.processed_count + self.failed_count}/{self.fragment_count}), continuing...")
-                        # Wait a bit longer for remaining fragments to be processed
-                        time.sleep(2)
+                # In server mode, we don't stop when queue is empty - keep running
                 continue
             except Exception as e:
                 print(f"ERROR: Processing worker error: {e}")
@@ -750,7 +704,7 @@ class LiveStreamProcessor:
         Args:
             input_path: Path to input audio file
             output_path: Path to save adjusted audio
-            speed_factor: Speed multiplier (1.0 = normal, 2.0 = double speed, 0.5 = half speed)
+            speed_factor: Speed multiplier (1.0 = normal, 2.0 = double speed, minimum 1.0x - never slows down)
         
         Returns:
             Path to the adjusted audio file
@@ -795,7 +749,7 @@ class LiveStreamProcessor:
             print(f"Combined audio: {len(combined_audio)} samples, {total_duration:.2f}s at {self.processed_sample_rate}Hz")
             
             # Save as WAV file
-            output_filename = f"combined_processed_audio_natural_{self.stream_id}_{int(time.time())}.wav"
+            output_filename = f"combined_processed_audio_natural_{int(time.time())}.wav"
             output_path = self.output_dir / output_filename
             
             # Ensure output directory exists
@@ -814,12 +768,12 @@ class LiveStreamProcessor:
             print(f"❌ Error combining audio fragments: {e}")
     
     def run(self):
-        """Main run method"""
+        """Main run method - start the Socket.IO server"""
         print("=" * 60)
-        print("Live Audio Stream Processing Client")
+        print("STS Audio Processing Server")
         print("=" * 60)
-        print(f"Server URL: {self.server_url}")
-        print(f"Stream ID: {self.stream_id}")
+        print(f"Host: {self.host}")
+        print(f"Port: {self.port}")
         print(f"Target languages: {', '.join(self.targets)}")
         print(f"Save locally: {self.save_local}")
         if self.save_local:
@@ -838,15 +792,15 @@ class LiveStreamProcessor:
             self.processing_thread.start()
             print("✓ Processing thread started")
             
-            # Connect to server
-            print(f"Connecting to {self.server_url}...")
-            self.sio.connect(self.server_url)
+            # Start the server
+            print(f"Starting STS server on {self.host}:{self.port}...")
+            print("✓ Server ready! Waiting for connections...")
             
-            # Wait for completion
-            self.sio.wait()
+            # Run the server
+            self.app.run(host=self.host, port=self.port, debug=False)
             
         except KeyboardInterrupt:
-            print("\nProcessing interrupted by user")
+            print("\nServer interrupted by user")
         except Exception as e:
             print(f"ERROR: {e}")
         finally:
@@ -862,20 +816,14 @@ class LiveStreamProcessor:
         # Combine and save all processed audio fragments
         self._combine_and_save_processed_audio()
         
-        if self.connected:
-            try:
-                self.sio.disconnect()
-            except Exception as e:
-                print(f"Warning: Error during disconnect: {e}")
-        
         print("✓ Cleanup complete")
 
 def main():
     """Main entry point"""
-    print("Starting main entry point")
-    ap = argparse.ArgumentParser(description="Live Audio Stream Processing Client")
-    ap.add_argument("--server-url", default="ws://localhost:4000", help="Socket.IO server URL")
-    ap.add_argument("--stream-id", default="stream-1", help="Stream ID to subscribe to")
+    print("Starting STS Audio Processing Server")
+    ap = argparse.ArgumentParser(description="STS Audio Processing Server")
+    ap.add_argument("--host", default="localhost", help="Server host")
+    ap.add_argument("--port", default=5000, type=int, help="Server port")
     ap.add_argument("--targets", "-t", default="es", help="Comma-separated target languages")
     ap.add_argument("--config", "-c", default="coqui-voices.yaml", help="Voice configuration YAML")
     ap.add_argument("--save-local", action="store_true", help="Save processed fragments locally")
