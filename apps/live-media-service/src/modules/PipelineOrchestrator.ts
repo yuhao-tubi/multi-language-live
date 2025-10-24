@@ -97,6 +97,7 @@ export class PipelineOrchestrator extends EventEmitter {
       streamId: config.streamId,
       storageService: this.storageService,
       socketClient: this.socketClient,
+      bufferDurationSeconds: config.bufferDuration,
     });
 
     this.remuxer = new Remuxer({

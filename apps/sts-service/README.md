@@ -1,21 +1,30 @@
-# Live Multilingual Audio
+# STS Audio Processing Server
 
-A real-time multilingual text-to-speech system with speaker detection and adaptive speed control for VTT files and audio/video streaming. This tool translates live captions/subtitles and synthesizes them with high-quality audio using Coqui TTS and M2M100 translation models.
+A real-time Speech-to-Text-to-Speech (STS) server that processes live audio streams through transcription, translation, and synthesis. Acts as a drop-in replacement for echo-audio-processor, compatible with live-media-service without requiring any changes to the media service.
 
-## 🚀 Features
+## 🚀 Key Features
+
+- **Socket.IO Server**: Compatible with live-media-service protocol
+- **Sequential Processing**: Processes fragments one at a time in arrival order (FIFO)
+- **Hallucination Detection**: Automatically skips corrupted/repetitive audio content
+- **Optimized Performance**: Fast TTS synthesis with quality controls
+- **Single Language Focus**: Optimized for one target language per server instance
+
+## 🎯 Core Capabilities
 
 - **Multilingual Translation**: Uses Facebook's M2M100 model for high-quality translation
-- **Speaker Detection**: Automatically detects speakers from VTT files (CAPS names)
-- **Adaptive Speed Control**: Adjusts TTS speed to match VTT timing exactly
+- **Speaker Detection**: Automatically detects speakers from audio content
+- **Adaptive Speed Control**: Adjusts TTS speed to match original audio duration exactly
 - **High-Quality Audio**: Uses rubberband for professional audio processing
 - **Smart Preprocessing**: Handles hyphenated words, time expressions, and abbreviations
 - **Caching System**: Caches translations and audio for improved performance
-- **Real-time Processing**: Processes VTT files with precise timing alignment
-- **Audio Streaming**: Real-time transcription of audio/video files with delayed playback
-- **Audio Mixing**: Overlay translated audio on original content with volume control
+- **Real-time Processing**: Processes audio fragments with precise timing alignment
 - **Enhanced Transcription**: Upgraded Whisper models with domain-specific prompts and confidence scoring
 - **Smart Utterance Detection**: Real-time adaptive silence detection with intelligent segment splitting
 - **Voice Cloning**: XTTS-v2 voice cloning with custom voice samples
+- **Silence Detection**: Automatically skips silent audio fragments
+- **Memory Management**: Automatic cleanup and garbage collection
+- **Model Warmup**: Pre-loads models to eliminate first-fragment latency
 
 ## 📋 Requirements
 
@@ -75,7 +84,97 @@ pip install -r requirements.txt
 
 ## 🎯 Usage
 
-### Main Application
+### STS Server (Primary Use Case)
+
+The STS server acts as a drop-in replacement for echo-audio-processor, processing live audio streams from live-media-service.
+
+#### Quick Start
+
+```bash
+# Start STS server for Spanish translation
+python stream_audio_client.py --targets es
+
+# Start with GPU acceleration (Apple Silicon)
+python stream_audio_client.py --targets es --device mps
+
+# Start with custom configuration
+python stream_audio_client.py --targets es --config coqui-voices.yaml --device mps
+```
+
+#### Complete Integration with Live-Media-Service
+
+1. **Start the STS Server**:
+   ```bash
+   cd apps/sts-service
+   python stream_audio_client.py --targets es --device mps
+   ```
+
+2. **Start Live-Media-Service** (in another terminal):
+   ```bash
+   cd apps/live-media-service
+   npm run dev
+   ```
+
+3. **Configure Live-Media-Service**:
+   - Open `http://localhost:3000`
+   - Set **Audio Processor URL** to: `http://localhost:5000`
+   - Set **Buffer Duration** to your desired chunk size (e.g., 15 seconds)
+   - Start streaming
+
+#### Server Configuration Options
+
+```bash
+# Basic server startup
+python stream_audio_client.py --targets es
+
+# With GPU acceleration
+python stream_audio_client.py --targets es --device mps    # Apple Silicon
+python stream_audio_client.py --targets es --device cuda   # NVIDIA GPU
+
+# Custom voice configuration
+python stream_audio_client.py --targets es --config custom-voices.yaml
+
+# Disable caching (for development)
+python stream_audio_client.py --targets es --no-cache
+
+# Save processed audio locally (uses more memory)
+python stream_audio_client.py --targets es --save-local
+
+# Different Whisper model sizes
+python stream_audio_client.py --targets es --whisper-model base    # Default
+python stream_audio_client.py --targets es --whisper-model small   # Better accuracy
+python stream_audio_client.py --targets es --whisper-model tiny    # Faster processing
+```
+
+#### Supported Target Languages
+
+Currently optimized for single-language processing. Supported languages:
+
+- `es` - Spanish
+- `fr` - French  
+- `de` - German
+- `it` - Italian
+- `pt` - Portuguese
+- `zh` - Chinese
+- `ja` - Japanese
+- `ko` - Korean
+
+#### Performance Optimizations
+
+The STS server includes several optimizations:
+
+- **Sequential Processing**: Guarantees fragments are processed and returned in arrival order
+- **Hallucination Detection**: Automatically skips repetitive/corrupted audio
+- **Silence Detection**: Skips silent fragments to save processing time
+- **Fast TTS Synthesis**: 2.0x synthesis speed with quality controls
+- **Speed Adjustment Cap**: Maximum 2.0x speed adjustment to prevent quality loss
+- **Text Truncation**: Limits TTS input to 200 characters to prevent issues
+- **Memory Management**: No file saving by default, automatic cleanup after each fragment
+- **Model Warmup**: Pre-loads models to eliminate first-fragment latency
+
+### Legacy Applications
+
+#### VTT Processing
 
 ```bash
 # Interactive mode - translate and speak text
@@ -228,7 +327,32 @@ The system includes intelligent text preprocessing to improve translation qualit
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### STS Server Issues
+
+1. **Server won't start**: Check if port 5000 is available
+   ```bash
+   lsof -i :5000  # Check what's using port 5000
+   ```
+
+2. **Live-media-service can't connect**: Verify STS server is running
+   ```bash
+   curl http://localhost:5000  # Should return HTML page
+   ```
+
+3. **Processing too slow**: Use GPU acceleration and smaller models
+   ```bash
+   python stream_audio_client.py --targets es --device mps --whisper-model tiny
+   ```
+
+4. **Queue building up**: Reduce buffer duration in live-media-service or use faster processing
+   - Set Buffer Duration to 10 seconds instead of 15-20 seconds
+   - Use `--whisper-model tiny` for faster transcription
+
+5. **Hallucination detection too aggressive**: Adjust thresholds in `_is_likely_hallucination()` method
+
+6. **TTS character limit warnings**: Text truncation should prevent this, but check for very long translations
+
+### General Issues
 
 1. **rubberband not found**: Install rubberband-cli system package first
 2. **PyTorch compatibility**: The code automatically handles PyTorch 2.6+ compatibility with Coqui TTS
@@ -243,14 +367,93 @@ The system includes intelligent text preprocessing to improve translation qualit
 
 ### Performance Tips
 
-- Use `--no-cache` to disable caching during development
-- Enable `--adaptive-speed` for VTT files to match timing exactly
+#### STS Server Optimization
+- Use GPU acceleration: `--device mps` (Apple Silicon) or `--device cuda` (NVIDIA)
+- Use smaller Whisper models: `--whisper-model tiny` for faster processing
+- Reduce buffer duration in live-media-service to 10-15 seconds
+- Monitor queue length in server logs - if building up, reduce processing load
+- Use `--no-cache` during development, enable caching in production
+
+#### General Optimization
 - Close other applications to free up memory for large models
+- Use `--adaptive-speed` for VTT files to match timing exactly
 - For audio streaming: Use `--whisper-model tiny` for faster transcription
 - Increase `--delay` parameter if translation/TTS can't keep up
 - Smart utterance detection automatically optimizes segment lengths
 
 ## 📊 Example Output
+
+### STS Server Processing
+
+```
+============================================================
+STS Audio Processing Server
+============================================================
+Host: localhost
+Port: 5000
+Target language: es
+Save locally: False
+============================================================
+Preloading models...
+Loading Whisper model...
+✓ Whisper model loaded
+Loading translation model...
+Loading multilingual MT (M2M100 418M) on mps…
+✓ Translation model moved to MPS
+✓ Translation model loaded
+Loading TTS model for es...
+✓ TTS model loaded for es
+✓ All models preloaded successfully!
+Warming up models...
+✓ Whisper model warmed up
+✓ Translation model warmed up
+✓ TTS model warmed up
+✓ All models verified and ready!
+Starting STS server on localhost:5000...
+✓ Server ready! Waiting for connections...
+
+✓ Client connected: A0SbjjoE4EsBSq9DAAAB
+📦 Fragment 1 Received from A0SbjjoE4EsBSq9DAAAB:
+  ID: test-stream_batch-0
+  Size: 164,494 bytes (160.64 KB)
+  Duration: 10s
+  → Added to processing queue
+
+Processing fragment test-stream_batch-0...
+Extracting audio from m4s data: 164494 bytes
+✓ Audio extraction successful (Method 1)
+Sending audio to Whisper: 160139 samples, 10.01s
+Whisper returned 2 segments
+Original speech rate: 22.3 words/second (223 words in 10.01s)
+🚫 Detected repetitive text (word 'sports' appears 45/223 times)
+🚫 Skipping TTS due to detected hallucination - returning original audio
+✓ Sent processed fragment test-stream_batch-0 to client A0SbjjoE4EsBSq9DAAAB (processing time: 0.27s)
+
+📦 Fragment 2 Received from A0SbjjoE4EsBSq9DAAAB:
+  ID: test-stream_batch-1
+  Size: 164,438 bytes (160.58 KB)
+  Duration: 10s
+  → Added to processing queue
+
+Processing fragment test-stream_batch-1...
+Extracting audio from m4s data: 164438 bytes
+✓ Audio extraction successful (Method 1)
+Sending audio to Whisper: 160139 samples, 10.01s
+Whisper returned 2 segments
+Original speech rate: 1.5 words/second (15 words in 10.01s)
+Combined transcription: That's it off to Jacobs and he is in for Packers Touchdowns his second today.
+Transcription time: 0.77s
+Processing for es: That's it off to Jacobs and he is in for Packers Touchdowns his second today.
+Translating text...
+es: Eso es lo que pasa a Jacobs y él está en para Packers Touchdowns su segundo hoy.  (MT 0.80s)
+🚀 Fast TTS Synthesis with speed=2.0x
+Using voice cloning with sample: ./voice_samples/joe_buck_voice_sample.wav
+  Baseline TTS duration: 5.20s
+  Required speed adjustment: 1.00x
+  → No speed adjustment needed (TTS duration already matches)
+TTS 6.64s
+✓ Sent processed fragment test-stream_batch-1 to client A0SbjjoE4EsBSq9DAAAB (processing time: 8.57s)
+```
 
 ### VTT Processing
 ```

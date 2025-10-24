@@ -224,27 +224,40 @@ def load_cfg(path: str) -> dict:
 _mt_cache = {}
 _tts_cache = {}
 
-def get_mt() -> Tuple[M2M100ForConditionalGeneration, M2M100Tokenizer]:
+def get_mt(device: str = "cpu") -> Tuple[M2M100ForConditionalGeneration, M2M100Tokenizer]:
     """Get or load multilingual translation model"""
-    if "mt" not in _mt_cache:
-        console.print("Loading multilingual MT (M2M100 418M)…")
+    cache_key = f"mt_{device}"
+    if cache_key not in _mt_cache:
+        console.print(f"Loading multilingual MT (M2M100 418M) on {device}…")
         model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M")
         tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
-        _mt_cache["mt"] = (model, tokenizer)
-    return _mt_cache["mt"]
+        
+        # Move model to specified device
+        if device == "mps" and torch.backends.mps.is_available():
+            model = model.to("mps")
+            console.print("✓ Translation model moved to MPS")
+        elif device == "cuda" and torch.cuda.is_available():
+            model = model.to("cuda")
+            console.print("✓ Translation model moved to CUDA")
+        else:
+            console.print("✓ Translation model on CPU")
+        
+        _mt_cache[cache_key] = (model, tokenizer)
+    return _mt_cache[cache_key]
 
-def translate(text: str, tgt: str) -> Dict[str, str]:
+def translate(text: str, tgt: str, device: str = "cpu") -> Dict[str, str]:
     """
     Translate text to target language
     
     Args:
         text: Text to translate
         tgt: Target language code
+        device: Device to use for translation
         
     Returns:
         Dictionary with translation result and source language
     """
-    model, tokenizer = get_mt()
+    model, tokenizer = get_mt(device)
     
     # Assume source language is always English
     src = "en"
@@ -252,6 +265,12 @@ def translate(text: str, tgt: str) -> Dict[str, str]:
     # Set source and target languages
     tokenizer.src_lang = src
     inputs = tokenizer(text, return_tensors="pt")
+    
+    # Move inputs to same device as model
+    if device == "mps" and torch.backends.mps.is_available():
+        inputs = {k: v.to("mps") for k, v in inputs.items()}
+    elif device == "cuda" and torch.cuda.is_available():
+        inputs = {k: v.to("cuda") for k, v in inputs.items()}
     
     # Generate translation with TTS-friendly parameters
     with torch.no_grad():

@@ -22,6 +22,8 @@ export interface AudioProcessorConfig {
   storageService: StorageService;
   /** Socket client service */
   socketClient: SocketClientService;
+  /** Buffer duration in seconds */
+  bufferDurationSeconds: number;
   /** FFmpeg path */
   ffmpegPath?: string;
 }
@@ -196,7 +198,7 @@ export class AudioProcessor extends EventEmitter {
       batchNumber,
       contentType: 'audio/mp4',
       size: audioData.length,
-      duration: 30, // Approximate - we could parse this from the file if needed
+      duration: this.config.bufferDurationSeconds, // Use actual buffer duration
       timestamp: new Date().toISOString(),
     };
 
