@@ -22,6 +22,7 @@ const config: Config = getConfig();
 initLogger({
   ...config.logging,
   logsPath: config.storage.logsPath,
+  moduleFilter: config.logging.moduleFilter,
 });
 const logger = getLogger();
 

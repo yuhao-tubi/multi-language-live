@@ -263,7 +263,43 @@ LOG_LEVEL=info
 LOG_FORMAT=json
 LOG_TO_FILE=true
 LOG_TO_CONSOLE=true
+
+# Module-based Log Filtering (Optional)
+# Comma-separated list of modules to show logs for
+# Leave empty to show all modules
+# Available: StreamFetcher, Remuxer, FragmentChunker, StreamPublisher, AudioProcessor, PipelineOrchestrator
+LOG_MODULE_FILTER=StreamPublisher,FragmentChunker
 ```
+
+### Module-based Log Filtering
+
+You can filter logs to show output from specific modules only. This is useful for debugging specific parts of the pipeline without being overwhelmed by logs from all modules.
+
+**Available modules:**
+- `StreamFetcher` - HLS segment fetching and buffering
+- `Remuxer` - Audio/video demuxing and remuxing
+- `FragmentChunker` - Fragment chunking for stdin streaming
+- `StreamPublisher` - RTMP publishing to SRS
+- `AudioProcessor` - WebSocket audio processing
+- `PipelineOrchestrator` - Pipeline coordination and status
+
+**Examples:**
+
+```bash
+# Show only StreamPublisher logs
+LOG_MODULE_FILTER=StreamPublisher
+
+# Show StreamPublisher and FragmentChunker logs
+LOG_MODULE_FILTER=StreamPublisher,FragmentChunker
+
+# Show all pipeline modules
+LOG_MODULE_FILTER=StreamFetcher,Remuxer,FragmentChunker,StreamPublisher
+
+# Show all modules (default - leave empty)
+LOG_MODULE_FILTER=
+```
+
+**Note:** Logs without a module context (e.g., main server logs, API requests) are always shown regardless of the filter.
 
 ## 🧪 Testing
 

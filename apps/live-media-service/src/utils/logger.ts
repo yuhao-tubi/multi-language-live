@@ -8,6 +8,11 @@ import fs from 'fs-extra';
 const { combine, timestamp, printf, colorize, json, errors } = winston.format;
 
 /**
+ * Allowed modules for logging (populated from config)
+ */
+let allowedModules: Set<string> | null = null;
+
+/**
  * Safe JSON stringify that handles circular references and errors
  */
 function safeStringify(obj: any, indent: number = 2): string {
@@ -46,11 +51,30 @@ function safeStringify(obj: any, indent: number = 2): string {
 }
 
 /**
+ * Custom filter format to filter logs by module context
+ */
+const moduleFilter = winston.format((info) => {
+  // If no filter is set, allow all logs
+  if (!allowedModules || allowedModules.size === 0) {
+    return info;
+  }
+
+  // If context is set and not in allowed modules, filter it out
+  if (typeof info.context === 'string' && !allowedModules.has(info.context)) {
+    return false;
+  }
+
+  // If no context is set (root logger), allow it
+  return info;
+});
+
+/**
  * Custom log format for console output
  */
-const consoleFormat = printf(({ level, message, timestamp, ...meta }) => {
+const consoleFormat = printf(({ level, message, timestamp, context, ...meta }) => {
+  const contextStr = context ? `[${context}]` : '';
   const metaStr = Object.keys(meta).length ? safeStringify(meta, 2) : '';
-  return `${timestamp} [${level}]: ${message} ${metaStr}`;
+  return `${timestamp} [${level}]${contextStr}: ${message} ${metaStr}`;
 });
 
 /**
@@ -62,14 +86,23 @@ export function createLogger(options: {
   toFile: boolean;
   toConsole: boolean;
   logsPath: string;
+  moduleFilter?: string[];
 }): winston.Logger {
   const transports: winston.transport[] = [];
+
+  // Set up module filtering
+  if (options.moduleFilter && options.moduleFilter.length > 0) {
+    allowedModules = new Set(options.moduleFilter);
+  } else {
+    allowedModules = null; // Allow all modules
+  }
 
   // Console transport
   if (options.toConsole) {
     transports.push(
       new winston.transports.Console({
         format: combine(
+          moduleFilter(),
           colorize(),
           timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
           errors({ stack: true }),
@@ -90,6 +123,7 @@ export function createLogger(options: {
         filename: path.join(options.logsPath, 'error.log'),
         level: 'error',
         format: combine(
+          moduleFilter(),
           timestamp(),
           errors({ stack: true }),
           json()
@@ -102,6 +136,7 @@ export function createLogger(options: {
       new winston.transports.File({
         filename: path.join(options.logsPath, 'combined.log'),
         format: combine(
+          moduleFilter(),
           timestamp(),
           errors({ stack: true }),
           options.format === 'json' ? json() : consoleFormat
@@ -133,8 +168,16 @@ export function initLogger(config: {
   toFile: boolean;
   toConsole: boolean;
   logsPath: string;
+  moduleFilter?: string[];
 }): void {
   loggerInstance = createLogger(config);
+  
+  // Log which modules are being filtered
+  if (config.moduleFilter && config.moduleFilter.length > 0) {
+    loggerInstance.info(`📋 Log filtering enabled for modules: ${config.moduleFilter.join(', ')}`);
+  } else {
+    loggerInstance.info('📋 Log filtering disabled - showing all modules');
+  }
 }
 
 /**

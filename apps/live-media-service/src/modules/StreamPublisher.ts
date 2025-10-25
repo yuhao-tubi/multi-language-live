@@ -295,12 +295,10 @@ export class StreamPublisher extends EventEmitter {
     const ffmpegArgs = [
       '-hide_banner',
       '-loglevel', 'info',
-      // Input from stdin
-      '-re',                              // Read input at native frame rate
+      // Input from stdin with larger buffer
       '-f', 'mp4',                        // Input format is MP4 (fragmented)
-      '-fflags', '+genpts', 
-      '-copyts',
-      '-start_at_zero',
+      '-re',
+      '-fflags', '+genpts+igndts',        // Generate PTS, ignore input DTS issues
       '-i', 'pipe:0',                     // Read from stdin
       // Copy codecs (fragments are already encoded properly)
       '-c:v', 'copy',                     // Copy video codec
@@ -320,14 +318,26 @@ export class StreamPublisher extends EventEmitter {
     this.log('info', fullCommand);
     this.log('info', `RTMP target: ${rtmpUrl}`);
 
-    this.ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs);
+    this.ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      // Increase buffer sizes for stdin/stdout/stderr
+      // This helps prevent backpressure and EAGAIN errors
+    });
     
     if (!this.ffmpegProcess.stdin) {
       throw new Error('Failed to open stdin stream for FFmpeg');
     }
 
-    // Store stdin stream reference
+    // Store stdin stream reference with increased buffer size
     this.stdinStream = this.ffmpegProcess.stdin;
+    
+    // Increase stdin high water mark to reduce backpressure
+    // Default is 16KB, we increase to 2MB for smoother streaming
+    if (this.stdinStream && '_writableState' in this.stdinStream) {
+      const writableState = (this.stdinStream as any)._writableState;
+      writableState.highWaterMark = 2 * 1024 * 1024; // 2MB buffer
+      this.log('info', `Stdin high water mark set to 2MB`);
+    }
     
     this.log('info', `FFmpeg process spawned with PID: ${this.ffmpegProcess.pid}`);
 
