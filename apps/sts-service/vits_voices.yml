@@ -1,0 +1,155 @@
+# VITS Voice Configuration for Speaker Detection
+# Maps detected speaker IDs to VITS voice models for synthesis
+
+# VITS model configurations for different languages
+vits_models:
+  es:
+    # Spanish VITS models
+    speaker_0:
+      model: "tts_models/es/css10/vits"
+      speaker_id: 0  # First speaker in multi-speaker model
+      fallback_model: "tts_models/es/css10/vits"
+    speaker_1:
+      model: "tts_models/es/css10/vits"
+      speaker_id: 1  # Second speaker in multi-speaker model
+      fallback_model: "tts_models/es/css10/vits"
+    speaker_2:
+      model: "tts_models/es/css10/vits"
+      speaker_id: 2  # Third speaker in multi-speaker model
+      fallback_model: "tts_models/es/css10/vits"
+    default:
+      model: "tts_models/es/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/es/css10/vits"
+
+  fr:
+    # French VITS models
+    speaker_0:
+      model: "tts_models/fr/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/fr/css10/vits"
+    speaker_1:
+      model: "tts_models/fr/css10/vits"
+      speaker_id: 1
+      fallback_model: "tts_models/fr/css10/vits"
+    speaker_2:
+      model: "tts_models/fr/css10/vits"
+      speaker_id: 2
+      fallback_model: "tts_models/fr/css10/vits"
+    default:
+      model: "tts_models/fr/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/fr/css10/vits"
+
+  de:
+    # German VITS models
+    speaker_0:
+      model: "tts_models/de/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/de/css10/vits"
+    speaker_1:
+      model: "tts_models/de/css10/vits"
+      speaker_id: 1
+      fallback_model: "tts_models/de/css10/vits"
+    speaker_2:
+      model: "tts_models/de/css10/vits"
+      speaker_id: 2
+      fallback_model: "tts_models/de/css10/vits"
+    default:
+      model: "tts_models/de/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/de/css10/vits"
+
+  pt:
+    # Portuguese VITS models
+    speaker_0:
+      model: "tts_models/pt/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/pt/css10/vits"
+    speaker_1:
+      model: "tts_models/pt/css10/vits"
+      speaker_id: 1
+      fallback_model: "tts_models/pt/css10/vits"
+    speaker_2:
+      model: "tts_models/pt/css10/vits"
+      speaker_id: 2
+      fallback_model: "tts_models/pt/css10/vits"
+    default:
+      model: "tts_models/pt/css10/vits"
+      speaker_id: 0
+      fallback_model: "tts_models/pt/css10/vits"
+
+  zh:
+    # Chinese VITS models
+    speaker_0:
+      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      speaker_id: 0
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+    speaker_1:
+      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      speaker_id: 1
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+    speaker_2:
+      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      speaker_id: 2
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+    default:
+      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      speaker_id: 0
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+
+# Speaker characteristics for better voice assignment
+speaker_characteristics:
+  speaker_0:
+    description: "Primary speaker (e.g., play-by-play commentator)"
+    voice_type: "male"
+    pitch_range: "medium"
+    speaking_rate: "normal"
+  speaker_1:
+    description: "Secondary speaker (e.g., color commentator)"
+    voice_type: "male"
+    pitch_range: "medium-high"
+    speaking_rate: "normal"
+  speaker_2:
+    description: "Third speaker (e.g., referee, analyst)"
+    voice_type: "male"
+    pitch_range: "low"
+    speaking_rate: "slow"
+  default:
+    description: "Default speaker for unknown voices"
+    voice_type: "male"
+    pitch_range: "medium"
+    speaking_rate: "normal"
+
+# Voice sample mappings (optional - for voice cloning if needed)
+voice_samples:
+  speaker_0:
+    sample_path: "./voice_samples/speaker_0_sample.wav"
+    description: "Sample audio for speaker_0 voice cloning"
+  speaker_1:
+    sample_path: "./voice_samples/speaker_1_sample.wav"
+    description: "Sample audio for speaker_1 voice cloning"
+  speaker_2:
+    sample_path: "./voice_samples/speaker_2_sample.wav"
+    description: "Sample audio for speaker_2 voice cloning"
+
+# Configuration options
+config:
+  # Maximum number of speakers to track
+  max_speakers: 10
+  
+  # Similarity threshold for speaker matching
+  similarity_threshold: 0.75
+  
+  # Whether to use voice cloning (requires voice samples)
+  enable_voice_cloning: false
+  
+  # Whether to use different VITS models for different speakers
+  use_speaker_specific_models: true
+  
+  # Fallback behavior when speaker not found
+  fallback_to_default: true
+  
+  # Cache settings
+  cache_speaker_embeddings: true
+  cache_voice_models: true

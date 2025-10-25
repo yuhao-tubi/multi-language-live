@@ -57,6 +57,10 @@ from utils.transcription import (
 from utils.audio_streaming import (
     load_audio_file
 )
+from utils.speaker_detection import (
+    SpeakerDetector,
+    create_speaker_detector
+)
 
 
 class SimpleVITSServer:
@@ -73,7 +77,7 @@ class SimpleVITSServer:
     Optimized for single target language processing with VITS models for maximum speed.
     """
     
-    def __init__(self, args):
+    def __init__(self, args, voices_config=None):
         print(f"Initializing SimpleVITSServer with args: {args}")
         self.args = args
         
@@ -105,7 +109,31 @@ class SimpleVITSServer:
         self.mt_model = None
         
         # Voice configuration
-        self.voices = {}
+        self.voices = voices_config or {}
+        
+        # VITS voice configuration
+        self.vits_voices = {}
+        vits_config_path = Path("vits_voices.yml")
+        if vits_config_path.exists():
+            import yaml
+            with open(vits_config_path, 'r') as f:
+                self.vits_voices = yaml.safe_load(f)
+            print(f"Loaded VITS voices configuration: {vits_config_path}")
+        else:
+            print(f"VITS voices configuration not found: {vits_config_path}")
+        
+        # Speaker detection (optional)
+        self.speaker_detector = None
+        if args.enable_speaker_detection:
+            self.speaker_detector = create_speaker_detector(
+                similarity_threshold=args.speaker_threshold,
+                device=args.device
+            )
+            print(f"Speaker detection enabled (threshold: {args.speaker_threshold})")
+            
+            # Load speaker database if specified
+            if args.speaker_config and Path(args.speaker_config).exists():
+                self.speaker_detector.load_speaker_database(args.speaker_config)
         
         # Processing queue for sequential audio processing (FIFO order)
         self.processing_queue = queue.Queue()
@@ -398,6 +426,16 @@ class SimpleVITSServer:
                 print(f"Audio extraction failed: {e}")
                 return None
             
+            # Detect speaker from audio (if enabled)
+            detected_speaker_id = "default"
+            speaker_confidence = 0.0
+            if self.speaker_detector:
+                detected_speaker_id, speaker_confidence = self.speaker_detector.identify_speaker(
+                    audio_data, 
+                    actual_sample_rate
+                )
+                print(f"Detected speaker: {detected_speaker_id} (confidence: {speaker_confidence:.2f})")
+            
             # Transcribe audio
             print("Transcribing audio...")
             segments = transcribe_audio_chunk(
@@ -415,9 +453,12 @@ class SimpleVITSServer:
             combined_text = " ".join([seg[2] for seg in segments])
             print(f"Transcription: {combined_text}")
             
-            # Detect speaker
-            speaker = detect_speaker(combined_text)
-            print(f"Speaker: {speaker}")
+            # Detect speaker from text (fallback or additional info)
+            text_speaker = detect_speaker(combined_text)
+            print(f"Text-based speaker: {text_speaker}")
+            
+            # Use audio-based speaker detection if available, otherwise fall back to text-based
+            speaker = detected_speaker_id if self.speaker_detector else text_speaker
             
             # Clean text for translation
             clean_text = clean_speaker_prefix(combined_text, speaker)
@@ -429,9 +470,54 @@ class SimpleVITSServer:
             translated_text = mt_res['out']
             print(f"{self.target_lang}: {translated_text}")
             
-            # TTS synthesis - use the exact same function as stream_audio_client.py
+            # Get voice configuration for detected speaker
+            voice_config = None
+            if self.speaker_detector:
+                voice_config = self.speaker_detector.get_speaker_voice_config(
+                    speaker, 
+                    self.target_lang,
+                    self.voices,
+                    self.vits_voices
+                )
+                print(f"Voice config for {speaker}: {voice_config}")
+            
+            # TTS synthesis - use speaker-specific voice configuration
             print("Synthesizing audio...")
-            wav_path = synth_to_wav(translated_text, self.actual_tts_model, speaker=None, target_language=self.target_lang, voice_sample_path=None)
+            
+            # Determine TTS parameters based on voice config
+            if voice_config and voice_config.get('config_type') == 'vits':
+                # Use VITS-specific configuration
+                model_name = voice_config.get('model', f'tts_models/{self.target_lang}/css10/vits')
+                speaker_id = voice_config.get('speaker_id', 0)
+                voice_sample_path = None  # VITS doesn't use voice samples
+                tts_speaker = None  # VITS uses speaker_id instead
+                
+                print(f"Using VITS model: {model_name}, speaker_id: {speaker_id}")
+                
+                # Load the specific VITS model if different from current
+                if hasattr(self, 'current_vits_model') and self.current_vits_model != model_name:
+                    print(f"Loading VITS model: {model_name}")
+                    self.current_vits_model = model_name
+                    self.tts_model = get_tts(model_name)
+                
+                # Use VITS-specific synthesis with speaker_id
+                wav_path = self._synth_to_wav_vits_with_speaker(
+                    translated_text, 
+                    model_name,
+                    speaker_id
+                )
+            else:
+                # Use legacy configuration
+                voice_sample_path = voice_config.get('voice_sample') if voice_config else None
+                tts_speaker = voice_config.get('fallback_speaker') if voice_config else None
+                
+                wav_path = synth_to_wav(
+                    translated_text, 
+                    self.actual_tts_model, 
+                    speaker=tts_speaker, 
+                    target_language=self.target_lang, 
+                    voice_sample_path=voice_sample_path
+                )
             
             if not wav_path or not wav_path.exists():
                 print("TTS synthesis failed, returning original audio")
@@ -616,6 +702,85 @@ class SimpleVITSServer:
             print("Falling back to TTS audio only")
             return tts_audio
 
+    def _synth_to_wav_vits_with_speaker(self, text: str, model_name: str, speaker_id: int) -> Path:
+        """
+        Synthesize text to WAV using VITS model with specific speaker ID.
+        
+        Args:
+            text: Text to synthesize
+            model_name: VITS model name
+            speaker_id: Speaker ID for multi-speaker VITS models
+            
+        Returns:
+            Path to generated WAV file
+        """
+        import tempfile
+        import os
+        
+        # Create temporary file
+        temp_fd, temp_path = tempfile.mkstemp(suffix=".wav", prefix="vits_speaker_")
+        os.close(temp_fd)
+        wav = Path(temp_path)
+        
+        try:
+            # Load TTS model
+            tts = get_tts(model_name)
+            
+            # Preprocess text
+            processed_text = preprocess_text_for_tts(text, convert_numbers=False)
+            
+            # Try VITS synthesis with speaker ID
+            success = False
+            
+            # Approach 1: Try with speaker parameter
+            try:
+                print(f"Attempting VITS synthesis with speaker_id={speaker_id}...")
+                tts.tts_to_file(text=processed_text, file_path=str(wav), speaker_id=speaker_id)
+                success = True
+                print(f"✓ VITS synthesis with speaker_id successful")
+            except Exception as e:
+                print(f"Speaker synthesis failed: {e}")
+                
+                # Approach 2: Try basic synthesis as fallback
+                try:
+                    print(f"Attempting basic VITS synthesis as fallback...")
+                    tts.tts_to_file(text=processed_text, file_path=str(wav))
+                    success = True
+                    print(f"✓ Basic VITS synthesis successful")
+                except Exception as e2:
+                    print(f"Basic synthesis failed: {e2}")
+                    
+                    # Approach 3: Try array-based synthesis
+                    try:
+                        print(f"Attempting array-based VITS synthesis...")
+                        audio_array = tts.tts(text=processed_text)
+                        
+                        import numpy as np
+                        if isinstance(audio_array, list):
+                            audio_array = np.array(audio_array)
+                        elif not isinstance(audio_array, np.ndarray):
+                            raise ValueError(f"Expected numpy array or list, got {type(audio_array)}")
+                        
+                        import soundfile as sf
+                        sf.write(str(wav), audio_array, 22050)  # VITS models typically use 22050 Hz
+                        success = True
+                        print(f"✓ Array-based VITS synthesis successful")
+                        
+                    except Exception as e3:
+                        print(f"Array-based synthesis failed: {e3}")
+                        raise RuntimeError(f"All VITS synthesis methods failed: {e}, {e2}, {e3}")
+            
+            if not success:
+                raise RuntimeError("VITS synthesis failed")
+                
+            return wav
+            
+        except Exception as e:
+            print(f"Error in VITS synthesis: {e}")
+            # Clean up temp file on error
+            if wav.exists():
+                wav.unlink()
+            raise
 
     def _encode_audio(self, audio_data: np.ndarray, sample_rate: int) -> bytes:
         """
@@ -707,6 +872,12 @@ def main():
     parser.add_argument("--whisper-model", default="base", help="Whisper model size")
     parser.add_argument("--device", default="cpu", help="Processing device")
     parser.add_argument("--no-mixing", action="store_true", help="Disable background noise mixing (TTS only)")
+    parser.add_argument('--speaker-threshold', type=float, default=0.75,
+                       help='Similarity threshold for speaker matching (0.0-1.0)')
+    parser.add_argument('--enable-speaker-detection', action='store_true',
+                       help='Enable automatic speaker detection')
+    parser.add_argument('--speaker-config', type=str, default=None,
+                       help='Path to speaker configuration file (optional)')
     
     args = parser.parse_args()
     
@@ -727,8 +898,7 @@ def main():
             sys.exit(1)
     
     # Create and start server
-    server = SimpleVITSServer(args)
-    server.voices = voices
+    server = SimpleVITSServer(args, voices_config=voices)
     server.start_server()
 
 

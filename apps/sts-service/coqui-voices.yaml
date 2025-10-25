@@ -75,3 +75,20 @@ voice_samples:
   # Example voice sample configurations:
   # joe_voice: "./voice_samples/joe_sample.wav"
   # referee_voice: "./voice_samples/referee_sample.wav"
+
+# Speaker mapping for automatic speaker detection
+# Maps detected speaker IDs to voice configurations
+speaker_mapping:
+  # Map detected speaker IDs to voice configurations
+  speaker_0:
+    voice_sample: "./voice_samples/joe_buck_voice_sample.wav"
+    fallback_speaker: "Andrew Chipper"
+  speaker_1:
+    voice_sample: "./voice_samples/color_commentator.wav"
+    fallback_speaker: "Claribel Dervla"
+  speaker_2:
+    voice_sample: "./voice_samples/referee_sample.wav"
+    fallback_speaker: "Andrew Chipper"
+  default:
+    fallback_speaker: "Andrew Chipper"
+    voice_sample: "./voice_samples/joe_buck_voice_sample.wav"
