@@ -43,7 +43,7 @@ export class FragmentChunker extends EventEmitter {
 
   constructor(config: FragmentChunkerConfig = {}) {
     super();
-    this.chunkSize = config.chunkSize ?? 1 * 1024 * 1024; // 1MB default
+    this.chunkSize = config.chunkSize ?? 64 * 1024; // 64KB default
     this.rateLimitBps = config.rateLimitBps ?? 0; // No rate limiting by default
 
     // Lazy initialize logger

@@ -33,7 +33,7 @@ export interface Config {
     reconnectDelayMs: number;
   };
   srs: {
-    rtmpUrl: string;
+    srtUrl: string;
     httpApi: string;
     hlsOutput: string;
   };
@@ -81,7 +81,7 @@ export function loadConfig(): Config {
       streamId: process.env.STREAM_ID || 'default-stream',
     },
     buffer: {
-      durationSeconds: parseInt(process.env.BUFFER_DURATION_SECONDS || '30', 10),
+      durationSeconds: parseInt(process.env.BUFFER_DURATION_SECONDS || '10', 10),
       maxSizeMB: parseInt(process.env.MAX_BUFFER_SIZE_MB || '500', 10),
     },
     websocket: {
@@ -90,7 +90,7 @@ export function loadConfig(): Config {
       reconnectDelayMs: parseInt(process.env.SOCKET_RECONNECT_DELAY_MS || '2000', 10),
     },
     srs: {
-      rtmpUrl: process.env.SRS_RTMP_URL || 'rtmp://localhost/live',
+      srtUrl: process.env.SRS_SRT_URL || 'srt://localhost:10080',
       httpApi: process.env.SRS_HTTP_API || 'http://localhost:1985/api/v1',
       hlsOutput: process.env.SRS_HLS_OUTPUT || 'http://localhost:8080',
     },

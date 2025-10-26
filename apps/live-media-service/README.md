@@ -17,9 +17,11 @@ The `StreamPublisher` now uses **chunked streaming** for handling large batch fi
 **Details:** See [`docs/PUBLISH_OPTIMIZATION.md`](./docs/PUBLISH_OPTIMIZATION.md)
 
 ### stdin-based Publisher Migration (v2.0.0)
-The `StreamPublisher` was upgraded from FFmpeg concat demuxer to **stdin piping**:
+The `StreamPublisher` was upgraded from FFmpeg concat demuxer to **stdin piping with SRT protocol**:
 
 - 🚀 **44-77% lower latency** (~15ms vs ~27-67ms per fragment)
+- 📡 **SRT protocol** for reliable low-latency streaming over UDP
+- 🎬 **MPEG-TS format** end-to-end for better streaming compatibility
 - 🔄 **Automatic reconnection** on FFmpeg failures (configurable retries)
 - 💾 **Fragment buffering** for seamless recovery after crashes
 - 🛡️ **Backpressure handling** prevents stdin buffer overflows
@@ -125,12 +127,12 @@ Open http://localhost:3000 in your browser.
            │ remux:complete
            ↓
 ┌─────────────────────┐
-│  StreamPublisher    │  Publish to SRS via RTMP
+│  StreamPublisher    │  Publish to SRS via SRT
 └──────────┬──────────┘
            │
            ↓
 ┌─────────────────────┐
-│  SRS Server         │  Output HLS/FLV/RTMP
+│  SRS Server         │  Output HLS/FLV/SRT
 └─────────────────────┘
 ```
 
@@ -144,21 +146,23 @@ Open http://localhost:3000 in your browser.
 
 #### 2. AudioProcessor
 - Concatenates TS segments
-- Demuxes with FFmpeg: TS → video.mp4 + audio.mp4
+- Demuxes with FFmpeg: TS → video.ts + audio.ts (MPEG-TS format)
 - Sends audio via WebSocket to external processor
 - Receives processed audio back
 
 #### 3. Remuxer
 - Combines video + processed audio
-- Outputs FMP4 with both streams
+- Outputs MPEG-TS with both streams
 - Maintains A/V sync
 
 #### 4. StreamPublisher
-- Continuous RTMP streaming to SRS via **stdin piping**
+- Continuous SRT streaming to SRS via **stdin piping**
+- Uses **mpegts format** for MPEG-TS streaming (native transport stream)
 - Low-latency fragment streaming (~15ms overhead)
 - **Automatic reconnection** on FFmpeg failures or pipe breaks
 - **Fragment buffering** for seamless recovery (last 3 fragments)
 - **Backpressure handling** for smooth streaming
+- **SRT protocol** for reliable low-latency streaming over UDP
 
 #### 5. PipelineOrchestrator
 - Coordinates all modules
@@ -243,13 +247,13 @@ SOURCE_URL=https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
 STREAM_ID=test-stream
 
 # Buffer
-BUFFER_DURATION_SECONDS=30
+BUFFER_DURATION_SECONDS=10
 
 # Audio Processor
 AUDIO_PROCESSOR_URL=http://localhost:5000
 
 # SRS
-SRS_RTMP_URL=rtmp://localhost/live
+SRS_SRT_URL=srt://localhost:10080
 SRS_HTTP_API=http://localhost:1985/api/v1
 
 # Storage

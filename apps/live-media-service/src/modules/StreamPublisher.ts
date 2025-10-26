@@ -20,8 +20,8 @@ let logger: ReturnType<typeof getLogger> | null = null;
 export interface StreamPublisherConfig {
   /** Stream identifier */
   streamId: string;
-  /** SRS RTMP URL (e.g., rtmp://localhost/live) */
-  srsRtmpUrl: string;
+  /** SRS SRT URL (e.g., srt://localhost:10080) */
+  srtUrl: string;
   /** FFmpeg path */
   ffmpegPath?: string;
   /** Storage path for fragments */
@@ -113,7 +113,7 @@ export class StreamPublisher extends EventEmitter {
     // Initialize fragment chunker for smooth streaming
     this.fragmentChunker = new FragmentChunker(config.chunkerConfig);
 
-    this.log('info', 'StreamPublisher initialized (stdin piping mode with chunked streaming)');
+    this.log('info', 'StreamPublisher initialized (stdin piping mode with chunked streaming to SRT)');
     if (this.enableCleanup) {
       const totalKept = this.maxSegmentsToKeep + this.cleanupSafetyBuffer;
       this.log('info', `Sliding window cleanup enabled:`);
@@ -140,7 +140,7 @@ export class StreamPublisher extends EventEmitter {
       return;
     }
 
-    this.log('info', `Initializing RTMP publishing to: ${this.config.srsRtmpUrl}/${this.config.streamId}`);
+    this.log('info', `Initializing SRT publishing to: ${this.config.srtUrl}?streamid=#!::r=live/${this.config.streamId},m=publish`);
     this.log('info', 'Using stdin piping for fragments');
 
     try {
@@ -155,7 +155,7 @@ export class StreamPublisher extends EventEmitter {
       this.reconnectAttempts = 0;
       
       this.emit('started');
-      this.log('info', '✅ Publisher started, FFmpeg ready to receive fragments via stdin');
+      this.log('info', '✅ Publisher started, FFmpeg ready to receive MPEG-TS fragments via stdin for SRT streaming');
     } catch (error) {
       this.log('error', 'Failed to start publisher:', error);
       throw error;
@@ -172,7 +172,7 @@ export class StreamPublisher extends EventEmitter {
     }
 
     this.isStopping = true;
-    this.log('info', '🛑 Stopping RTMP publishing...');
+    this.log('info', '🛑 Stopping SRT publishing...');
     this.log('info', `Stop state: publishedCount=${this.publishedCount}, ffmpegStarted=${this.ffmpegStarted}`);
 
     try {
@@ -287,36 +287,30 @@ export class StreamPublisher extends EventEmitter {
   }
 
   /**
-   * Start FFmpeg process with stdin input
+   * Start FFmpeg process with stdin input for SRT streaming
    */
   private async startFFmpegProcess(): Promise<void> {
-    const rtmpUrl = `${this.config.srsRtmpUrl}/${this.config.streamId}`;
+    const srtUrl = `${this.config.srtUrl}?mode=caller&latency=120&peerlatency=120&tsbpd=1&streamid=#!::r=live/${this.config.streamId},m=publish`;
 
     const ffmpegArgs = [
       '-hide_banner',
-      '-loglevel', 'info',
-      // Input from stdin with larger buffer
-      '-f', 'mp4',                        // Input format is MP4 (fragmented)
-      '-re',
-      '-fflags', '+genpts+igndts',        // Generate PTS, ignore input DTS issues
+      '-loglevel', 'verbose',
+      // Input from stdin - MPEG-TS format
+      '-re',                              // Read input at native frame rate
       '-i', 'pipe:0',                     // Read from stdin
-      // Copy codecs (fragments are already encoded properly)
-      '-c:v', 'copy',                     // Copy video codec
-      '-c:a', 'copy',                     // Copy audio codec
-      // Timestamp and sync flags for continuity
-      '-fflags', '+genpts',               // Generate presentation timestamps
-      '-avoid_negative_ts', 'make_zero',  // Ensure positive timestamps
-      // FLV output format for RTMP
-      '-f', 'flv',
-      '-flvflags', 'no_duration_filesize',  // Don't require total duration
-      rtmpUrl,
+      // Copy both streams without re-encoding
+      '-c:v', 'copy',
+      '-c:a', 'copy',
+      // Output to SRT as MPEG-TS
+      '-f', 'mpegts',
+      srtUrl,
     ];
 
     // Log full command for troubleshooting
     const fullCommand = `${this.ffmpegPath} ${ffmpegArgs.join(' ')}`;
     this.log('info', '🎬 Full FFmpeg command:');
     this.log('info', fullCommand);
-    this.log('info', `RTMP target: ${rtmpUrl}`);
+    this.log('info', `SRT target: ${srtUrl}`);
 
     this.ffmpegProcess = spawn(this.ffmpegPath, ffmpegArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -343,7 +337,11 @@ export class StreamPublisher extends EventEmitter {
 
     // Handle stdin errors
     this.stdinStream.on('error', (error) => {
-      this.log('error', 'stdin stream error:', error);
+      const errno = (error as any).errno;
+      const code = (error as any).code;
+      this.log('error', `❌ stdin stream error - code: ${code}, errno: ${errno}`);
+      this.log('error', `   Full error: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`);
+      this.log('error', `   State: publishedCount=${this.publishedCount}, stdinWritable=${this.stdinStream?.writable}`);
       this.handleFFmpegFailure(error);
     });
 
@@ -355,7 +353,8 @@ export class StreamPublisher extends EventEmitter {
     this.ffmpegProcess.stdout?.on('data', (data) => {
       const message = data.toString();
       stdoutBuffer += message;
-      this.log('debug', `FFmpeg stdout: ${message.trim()}`);
+      // Log stdout as well to catch any output messages
+      this.log('info', `FFmpeg stdout: ${message.trim()}`);
     });
 
     // Handle FFmpeg stderr (errors and warnings)
@@ -363,36 +362,60 @@ export class StreamPublisher extends EventEmitter {
       const message = data.toString();
       stderrBuffer += message;
 
-      // Log all FFmpeg output for debugging
-      this.log('debug', `FFmpeg stderr: ${message.trim()}`);
+      // Log ALL FFmpeg output for debugging (both error and info level)
+      const lines = message.trim().split('\n');
+      lines.forEach(line => {
+        // Always log to see what's happening
+        if (line.toLowerCase().includes('error') || 
+            line.toLowerCase().includes('failed') ||
+            line.toLowerCase().includes('cannot') ||
+            line.toLowerCase().includes('unable')) {
+          this.log('error', `FFmpeg: ${line}`);
+        } else if (line.toLowerCase().includes('warning')) {
+          this.log('warn', `FFmpeg: ${line}`);
+        } else {
+          // Log info/debug messages too
+          this.log('info', `FFmpeg: ${line}`);
+        }
+      });
 
       // Check for critical errors
       if (message.toLowerCase().includes('invalid data found') ||
           message.toLowerCase().includes('no such file') ||
           message.toLowerCase().includes('cannot read')) {
-        this.log('error', `FFmpeg ERROR: ${message.trim()}`);
-      } else if (message.toLowerCase().includes('error') && !message.toLowerCase().includes('last message repeated')) {
-        this.log('error', `FFmpeg ERROR: ${message.trim()}`);
-      } else if (message.toLowerCase().includes('warning')) {
-        this.log('warn', `FFmpeg WARNING: ${message.trim()}`);
+        this.log('error', `FFmpeg CRITICAL ERROR: ${message.trim()}`);
+      } else if (message.toLowerCase().includes('connection') && message.toLowerCase().includes('refused')) {
+        this.log('error', `FFmpeg CONNECTION ERROR: ${message.trim()}`);
+      } else if (message.toLowerCase().includes('srt') && message.toLowerCase().includes('error')) {
+        this.log('error', `FFmpeg SRT ERROR: ${message.trim()}`);
+      }
+      
+      // Detect EPIPE errors specifically
+      if (message.toLowerCase().includes('broken pipe') || 
+          message.toLowerCase().includes('epipe')) {
+        this.log('error', `🔴 EPIPE/Broken Pipe detected: ${message.trim()}`);
+        this.log('error', `   Context: publishedCount=${this.publishedCount}, isPublishing=${this.isPublishing}`);
       }
     });
 
     // Handle FFmpeg process exit
     this.ffmpegProcess.on('close', (code, signal) => {
-      this.log('warn', `FFmpeg process exited - code: ${code}, signal: ${signal}`);
-      this.log('warn', `Exit context: isStopping=${this.isStopping}, isReconnecting=${this.isReconnecting}, publishedCount=${this.publishedCount}`);
+      this.log('error', `❌ FFmpeg process exited - code: ${code}, signal: ${signal}`);
+      this.log('error', `Exit context: isStopping=${this.isStopping}, isReconnecting=${this.isReconnecting}, publishedCount=${this.publishedCount}`);
       
       // Log buffer contents for debugging
       if (stderrBuffer.trim()) {
-        this.log('debug', `FFmpeg stderr buffer (last 500 chars): ${stderrBuffer.substring(Math.max(0, stderrBuffer.length - 500))}`);
+        this.log('error', `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        this.log('error', `FFmpeg stderr (last 1000 chars):`);
+        this.log('error', stderrBuffer.substring(Math.max(0, stderrBuffer.length - 1000)));
+        this.log('error', `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       }
       if (stdoutBuffer.trim()) {
-        this.log('debug', `FFmpeg stdout buffer (last 500 chars): ${stdoutBuffer.substring(Math.max(0, stdoutBuffer.length - 500))}`);
+        this.log('info', `FFmpeg stdout (last 500 chars): ${stdoutBuffer.substring(Math.max(0, stdoutBuffer.length - 500))}`);
       }
       
       if (!this.isStopping && !this.isReconnecting) {
-        this.log('error', `FFmpeg exited unexpectedly while publishing`);
+        this.log('error', `❌ FFmpeg exited unexpectedly while publishing`);
         const error = new Error(`FFmpeg exited unexpectedly (code: ${code}, signal: ${signal})`);
         this.handleFFmpegFailure(error);
       } else {
@@ -401,14 +424,16 @@ export class StreamPublisher extends EventEmitter {
     });
 
     this.ffmpegProcess.on('error', (error) => {
-      this.log('error', 'FFmpeg process error:', error);
+      this.log('error', '❌ FFmpeg process error:', error);
+      this.log('error', `   Error details: ${JSON.stringify(error, null, 2)}`);
       this.handleFFmpegFailure(error);
     });
 
-    // Give FFmpeg a moment to start
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Give FFmpeg more time to establish SRT connection
+    this.log('info', 'Waiting for FFmpeg to establish SRT connection...');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    this.log('info', '✅ FFmpeg process started with stdin piping');
+    this.log('info', '✅ FFmpeg process started with stdin piping to SRT');
   }
 
   /**
@@ -436,7 +461,7 @@ export class StreamPublisher extends EventEmitter {
       // Remove old batch files from disk
       let deletedCount = 0;
       for (const batchNumber of segmentsToRemove) {
-        const batchPath = path.join(this.outputDirectory, `batch-${batchNumber}.mp4`);
+        const batchPath = path.join(this.outputDirectory, `batch-${batchNumber}.ts`);
         
         try {
           if (await fs.pathExists(batchPath)) {
@@ -581,7 +606,7 @@ export class StreamPublisher extends EventEmitter {
   getStatus(): {
     isPublishing: boolean;
     publishedCount: number;
-    rtmpUrl: string;
+    srtUrl: string;
     reconnectAttempts: number;
     isReconnecting: boolean;
     ffmpegStarted: boolean;
@@ -590,7 +615,7 @@ export class StreamPublisher extends EventEmitter {
     return {
       isPublishing: this.isPublishing,
       publishedCount: this.publishedCount,
-      rtmpUrl: `${this.config.srsRtmpUrl}/${this.config.streamId}`,
+      srtUrl: `${this.config.srtUrl}?mode=caller&latency=120&peerlatency=120&tsbpd=1&streamid=#!::r=live/${this.config.streamId},m=publish`,
       reconnectAttempts: this.reconnectAttempts,
       isReconnecting: this.isReconnecting,
       ffmpegStarted: this.ffmpegStarted,

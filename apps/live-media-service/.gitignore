@@ -12,6 +12,7 @@ dist/
 
 # Storage directories (runtime data)
 storage/
+storage_backup/
 original_stream/
 processed_fragments/
 logs/

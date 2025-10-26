@@ -136,8 +136,8 @@ export interface PipelineConfig {
   bufferDuration: number;
   /** Audio processor WebSocket URL */
   audioProcessorUrl: string;
-  /** SRS RTMP URL */
-  srsRtmpUrl: string;
+  /** SRS SRT URL */
+  srtUrl: string;
   /** Storage base path */
   storagePath: string;
 }

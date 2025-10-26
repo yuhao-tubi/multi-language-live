@@ -95,7 +95,7 @@ export class Remuxer extends EventEmitter {
   }
 
   /**
-   * Remux video + audio into single file
+   * Remux video + audio into single MPEG-TS file
    */
   private async remux(
     batchNumber: number,
@@ -107,7 +107,7 @@ export class Remuxer extends EventEmitter {
     const outputPath = this.storageService.getOutputPath(this.config.streamId, batchNumber);
     await this.storageService.ensureDir(outputPath);
 
-    // FFmpeg command to remux video + audio → output.mp4
+    // FFmpeg command to remux video + audio → output.ts
     // Since both are demuxed from the same source, they should already be in sync
     const ffmpegArgs = [
       '-i', videoPath,
@@ -121,8 +121,7 @@ export class Remuxer extends EventEmitter {
       // Use shortest stream as safeguard (in case of any drift)
       '-shortest',
       // Output format
-      '-f', 'mp4',
-      '-movflags', 'frag_keyframe+empty_moov',
+      '-f', 'mpegts',
       outputPath,
     ];
 

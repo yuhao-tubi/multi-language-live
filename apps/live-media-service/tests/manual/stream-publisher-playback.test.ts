@@ -10,8 +10,8 @@
  *   npx tsx tests/manual/stream-publisher-playback.test.ts
  * 
  * Prerequisites:
- *   - SRS server running on rtmp://localhost/live
- *   - Batch files in storage/processed_fragments/output/test-stream/
+ *   - SRS server running with SRT support on srt://localhost:10080
+ *   - Batch files (.ts) in storage/processed_fragments/output/test-stream/
  */
 
 import { StreamPublisher } from '../../src/modules/StreamPublisher.js';
@@ -19,17 +19,27 @@ import { RemuxedOutput } from '../../src/types/index.js';
 import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
+import { initLogger } from '../../src/utils/logger.js';
 
 // ESM dirname workaround
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Initialize logger before creating any modules
+initLogger({
+  level: 'info',
+  format: 'simple',
+  toFile: false,
+  toConsole: true,
+  logsPath: path.join(__dirname, '../../storage/logs'),
+});
+
 // Configuration
 const CONFIG = {
   streamId: 'test-stream',
-  srsRtmpUrl: 'rtmp://localhost/live',
+  srtUrl: 'srt://localhost:10080',
   batchDirectory: path.join(__dirname, '../../storage/processed_fragments/output/test-stream'),
-  fragmentDurationSeconds: 30, // Each batch is ~30 seconds
+  fragmentDurationSeconds: 10, // Each batch is ~10 seconds
   maxReconnectAttempts: 3,
   reconnectDelayMs: 2000,
   // Sliding window cleanup (keep last 3 segments + 2 safety buffer = 5 total)
@@ -61,9 +71,9 @@ async function getBatchFiles(): Promise<Array<{ batchNumber: number; path: strin
   const files = await fs.readdir(CONFIG.batchDirectory);
   
   const batchFiles = files
-    .filter((file) => file.startsWith('batch-') && file.endsWith('.mp4'))
+    .filter((file) => file.startsWith('batch-') && file.endsWith('.ts'))
     .map((file) => {
-      const match = file.match(/batch-(\d+)\.mp4/);
+      const match = file.match(/batch-(\d+)\.ts/);
       if (!match) return null;
       
       const batchNumber = parseInt(match[1], 10);
@@ -110,7 +120,7 @@ async function runTest() {
   console.log(`📁 Found ${batchFiles.length} batch files:`);
   batchFiles.forEach((file) => {
     const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-    console.log(`   - batch-${file.batchNumber}.mp4 (${sizeMB} MB)`);
+    console.log(`   - batch-${file.batchNumber}.ts (${sizeMB} MB)`);
   });
   console.log();
 
@@ -123,7 +133,7 @@ async function runTest() {
   console.log('🔧 Initializing StreamPublisher...');
   const publisher = new StreamPublisher({
     streamId: CONFIG.streamId,
-    srsRtmpUrl: CONFIG.srsRtmpUrl,
+    srtUrl: CONFIG.srtUrl,
     outputDirectory: CONFIG.batchDirectory,
     maxReconnectAttempts: CONFIG.maxReconnectAttempts,
     reconnectDelayMs: CONFIG.reconnectDelayMs,
@@ -191,9 +201,11 @@ async function runTest() {
     // Give FFmpeg a moment to stabilize
     await sleep(1000);
 
-    console.log('\n📺 Stream URL: ' + `rtmp://localhost/live/${CONFIG.streamId}`);
-    console.log('💡 You can watch with: ffplay rtmp://localhost/live/' + CONFIG.streamId);
-    console.log('💡 Or with VLC: Open Network Stream -> rtmp://localhost/live/' + CONFIG.streamId);
+    const streamUrl = `srt://localhost:10080?streamid=live/${CONFIG.streamId}`;
+    console.log('\n📺 Stream URL: ' + streamUrl);
+    console.log('💡 You can watch with: ffplay ' + streamUrl);
+    console.log('💡 Or with VLC: Media -> Open Network Stream -> ' + streamUrl);
+    console.log('💡 Note: SRT requires SRT-capable players (FFmpeg 4.0+, VLC 3.0+)');
     console.log('\n🎬 Starting playback...\n');
 
     // Publish each batch file at the correct pace
@@ -220,7 +232,7 @@ async function runTest() {
         // Wait for fragment duration before publishing next (except for last fragment)
         if (i < batchFiles.length - 1) {
           console.log(`⏳ Waiting ${CONFIG.fragmentDurationSeconds}s before next fragment...`);
-          await sleep(CONFIG.fragmentDurationSeconds * 1000);
+          // await sleep(CONFIG.fragmentDurationSeconds * 1000);
         }
       } catch (error) {
         console.error(`❌ Failed to publish batch ${batchFile.batchNumber}:`, error);
@@ -242,7 +254,7 @@ async function runTest() {
     console.log('═══════════════════════════════════');
     console.log(`✅ Published: ${publishedCount}/${batchFiles.length} fragments`);
     console.log(`⏱️  Total time: ${formatDuration(totalElapsedSeconds)}`);
-    console.log(`📡 Stream: rtmp://localhost/live/${CONFIG.streamId}`);
+    console.log(`📡 Stream: srt://localhost:10080?streamid=live/${CONFIG.streamId}`);
     
     if (errorOccurred) {
       console.log('⚠️  Some errors occurred during playback');

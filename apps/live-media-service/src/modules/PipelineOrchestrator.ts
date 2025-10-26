@@ -107,7 +107,7 @@ export class PipelineOrchestrator extends EventEmitter {
 
     this.streamPublisher = new StreamPublisher({
       streamId: config.streamId,
-      srsRtmpUrl: config.srsRtmpUrl,
+      srtUrl: config.srtUrl,
       storagePath: config.storagePath,
       outputDirectory: this.storageService.getOutputDirectory(config.streamId),
     });
@@ -139,7 +139,7 @@ export class PipelineOrchestrator extends EventEmitter {
       this.log('info', `   Stream ID: ${this.config.streamId}`);
       this.log('info', `   Buffer: ${this.config.bufferDuration}s`);
       this.log('info', `   Audio Processor: ${this.config.audioProcessorUrl}`);
-      this.log('info', `   SRS: ${this.config.srsRtmpUrl}/${this.config.streamId}`);
+      this.log('info', `   SRS: ${this.config.srtUrl}?streamid=live/${this.config.streamId}`);
 
       // Initialize storage
       await this.storageService.initialize();

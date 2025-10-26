@@ -93,7 +93,7 @@ app.post('/api/pipeline/start', async (req: Request, res: Response) => {
       streamId: req.body.streamId || config.hls.streamId,
       bufferDuration: req.body.bufferDuration || config.buffer.durationSeconds,
       audioProcessorUrl: req.body.audioProcessorUrl || config.websocket.audioProcessorUrl,
-      srsRtmpUrl: req.body.srsRtmpUrl || config.srs.rtmpUrl,
+      srtUrl: req.body.srtUrl || config.srs.srtUrl,
       storagePath: config.storage.basePath,
     };
 
