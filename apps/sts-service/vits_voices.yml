@@ -82,21 +82,40 @@ vits_models:
   zh:
     # Chinese VITS models
     speaker_0:
-      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
       speaker_id: 0
-      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
     speaker_1:
-      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
       speaker_id: 1
-      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
     speaker_2:
-      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
       speaker_id: 2
-      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
     default:
-      model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
       speaker_id: 0
-      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC"
+      fallback_model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"
+
+  hi:
+    # Hindi multilingual model (XTTSv2) - no VITS model available
+    speaker_0:
+      model: "tts_models/multilingual/multi-dataset/xtts_v2"
+      speaker_id: 0
+      fallback_model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    speaker_1:
+      model: "tts_models/multilingual/multi-dataset/xtts_v2"
+      speaker_id: 1
+      fallback_model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    speaker_2:
+      model: "tts_models/multilingual/multi-dataset/xtts_v2"
+      speaker_id: 2
+      fallback_model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    default:
+      model: "tts_models/multilingual/multi-dataset/xtts_v2"
+      speaker_id: 0
+      fallback_model: "tts_models/multilingual/multi-dataset/xtts_v2"
 
 # Speaker characteristics for better voice assignment
 speaker_characteristics:

@@ -56,7 +56,7 @@ languages:
         voice_sample: null
   zh:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
-    fast_model: "tts_models/zh-CN/baker/tacotron2-DDC"  # Fast model for Chinese
+    fast_model: "tts_models/zh-CN/baker/tacotron2-DDC-GST"  # Fast model for Chinese
     multi_speaker: true
     speakers:
       JOE:

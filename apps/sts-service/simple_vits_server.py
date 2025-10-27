@@ -453,6 +453,11 @@ class SimpleVITSServer:
             combined_text = " ".join([seg[2] for seg in segments])
             print(f"Transcription: {combined_text}")
             
+            # Check for hallucination/repetitive content
+            if self._is_likely_hallucination(combined_text, duration):
+                print("🚫 Skipping TTS due to detected hallucination - returning original audio")
+                return self._encode_audio(audio_data, actual_sample_rate)
+            
             # Detect speaker from text (fallback or additional info)
             text_speaker = detect_speaker(combined_text)
             print(f"Text-based speaker: {text_speaker}")
@@ -586,6 +591,47 @@ class SimpleVITSServer:
         except Exception as e:
             print(f"ERROR: Error processing fragment: {e}")
             return None
+    
+    def _is_likely_hallucination(self, text: str, original_duration: float) -> bool:
+        """
+        Detect if text is likely a hallucination that should skip TTS
+        
+        Args:
+            text: Transcribed text to check
+            original_duration: Duration of the original audio in seconds
+            
+        Returns:
+            True if likely a hallucination, False otherwise
+        """
+        words = text.lower().split()
+        if len(words) < 10:
+            return False
+        
+        # Check for excessive repetition
+        word_counts = {}
+        for word in words:
+            word_counts[word] = word_counts.get(word, 0) + 1
+        
+        # If any word appears more than 30% of the time, likely repetitive
+        max_word_count = max(word_counts.values())
+        if max_word_count > len(words) * 0.3:
+            word_name = max(word_counts, key=word_counts.get)
+            print(f"🚫 Detected repetitive text (word '{word_name}' appears {max_word_count}/{len(words)} times)")
+            return True
+        
+        # Check for extremely high word density (likely hallucination)
+        words_per_second = len(words) / original_duration
+        if words_per_second > 15:  # More than 15 words per second is unrealistic
+            print(f"🚫 Detected unrealistic word density: {words_per_second:.1f} words/second")
+            return True
+        
+        # Check for extremely long text relative to duration
+        chars_per_second = len(text) / original_duration
+        if chars_per_second > 100:  # More than 100 characters per second is unrealistic
+            print(f"🚫 Detected unrealistic character density: {chars_per_second:.1f} chars/second")
+            return True
+        
+        return False
     
     def _adjust_audio_speed_in_memory(self, audio_data: np.ndarray, sample_rate: int, speed_factor: float) -> np.ndarray:
         """

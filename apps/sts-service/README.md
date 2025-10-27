@@ -202,6 +202,7 @@ Currently optimized for single-language processing. Supported languages:
 - `zh` - Chinese
 - `ja` - Japanese
 - `ko` - Korean
+- `hi` - Hindi
 
 #### TTS Performance Modes
 
