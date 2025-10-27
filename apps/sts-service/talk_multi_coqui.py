@@ -245,7 +245,7 @@ def get_mt(device: str = "cpu") -> Tuple[M2M100ForConditionalGeneration, M2M100T
         _mt_cache[cache_key] = (model, tokenizer)
     return _mt_cache[cache_key]
 
-def translate(text: str, tgt: str, device: str = "cpu") -> Dict[str, str]:
+def translate(text: str, tgt: str, device: str = "cpu", src: str = "en") -> Dict[str, str]:
     """
     Translate text to target language
     
@@ -253,14 +253,12 @@ def translate(text: str, tgt: str, device: str = "cpu") -> Dict[str, str]:
         text: Text to translate
         tgt: Target language code
         device: Device to use for translation
+        src: Source language code (defaults to "en" for English)
         
     Returns:
         Dictionary with translation result and source language
     """
     model, tokenizer = get_mt(device)
-    
-    # Assume source language is always English
-    src = "en"
     
     # Set source and target languages
     tokenizer.src_lang = src

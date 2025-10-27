@@ -86,6 +86,7 @@ class SimpleVITSServer:
         if len(targets_list) != 1:
             raise ValueError(f"Single target language required, got: {targets_list}")
         self.target_lang = targets_list[0]
+        self.source_lang = args.source_lang
         self.host = args.host
         self.port = args.port
         self.save_local = args.save_local
@@ -180,26 +181,36 @@ class SimpleVITSServer:
         @self.sio.on('fragment:data')
         def fragment_data(sid, delivery):
             """Handle incoming audio fragment from live-media-service client"""
-            fragment = delivery['fragment']
-            data = delivery['data']
-            
-            self.fragment_count += 1
-            
-            # Update client stats
-            if sid in self.connected_clients:
-                self.connected_clients[sid]['fragments_received'] += 1
-            
-            print(f"📦 Fragment {self.fragment_count} Received from {sid}:")
-            print(f"  ID: {fragment['id']}")
-            print(f"  Stream: {fragment['streamId']}")
-            print(f"  Batch: {fragment['batchNumber']}")
-            print(f"  Size: {len(data):,} bytes ({len(data) / 1024:.2f} KB)")
-            print(f"  Duration: {fragment['duration']}s")
-            
-            # Add to processing queue for background processing
-            # Include sid so we can send response back to correct client
-            self.processing_queue.put((sid, fragment, data))
-            print(f"  → Added to processing queue")
+            try:
+                print(f"🔔 fragment:data event received from {sid}")
+                fragment = delivery.get('fragment', {})
+                data = delivery.get('data', b'')
+                
+                if not data:
+                    print(f"⚠️ Empty data received in fragment")
+                    return
+                
+                self.fragment_count += 1
+                
+                # Update client stats
+                if sid in self.connected_clients:
+                    self.connected_clients[sid]['fragments_received'] += 1
+                
+                print(f"📦 Fragment {self.fragment_count} Received from {sid}:")
+                print(f"  ID: {fragment.get('id', 'unknown')}")
+                print(f"  Stream: {fragment.get('streamId', 'unknown')}")
+                print(f"  Batch: {fragment.get('batchNumber', 'unknown')}")
+                print(f"  Size: {len(data):,} bytes ({len(data) / 1024:.2f} KB)")
+                print(f"  Duration: {fragment.get('duration', 0)}s")
+                
+                # Add to processing queue for background processing
+                # Include sid so we can send response back to correct client
+                self.processing_queue.put((sid, fragment, data))
+                print(f"  → Added to processing queue (queue size: {self.processing_queue.qsize()})")
+            except Exception as e:
+                print(f"ERROR in fragment_data handler: {e}")
+                import traceback
+                traceback.print_exc()
     
     
     def _preload_models(self):
@@ -274,7 +285,10 @@ class SimpleVITSServer:
             
             # Warmup translation model
             print("Warming up translation model...")
-            translate("Hello world", self.target_lang, self.args.device)
+            if self.source_lang:
+                translate("Hello world", self.target_lang, self.args.device, src=self.source_lang)
+            else:
+                translate("Hello world", self.target_lang, self.args.device)
             print("✓ Translation model warmed up")
             
             # Warmup TTS model
@@ -296,7 +310,10 @@ class SimpleVITSServer:
             print("✓ Whisper verification passed")
             
             # Test translation
-            mt_res = translate("Test", self.target_lang, self.args.device)
+            if self.source_lang:
+                mt_res = translate("Test", self.target_lang, self.args.device, src=self.source_lang)
+            else:
+                mt_res = translate("Test", self.target_lang, self.args.device)
             print("✓ Translation verification passed")
             
             # Test TTS
@@ -471,7 +488,12 @@ class SimpleVITSServer:
             # Translate
             print("Translating text...")
             preprocessed_text = preprocess_text_for_translation(clean_text)
-            mt_res = translate(preprocessed_text, self.target_lang, self.args.device)
+            if self.source_lang:
+                print(f"Translating from {self.source_lang} to {self.target_lang}")
+                mt_res = translate(preprocessed_text, self.target_lang, self.args.device, src=self.source_lang)
+            else:
+                print(f"Translating (auto-detect source) to {self.target_lang}")
+                mt_res = translate(preprocessed_text, self.target_lang, self.args.device)
             translated_text = mt_res['out']
             print(f"{self.target_lang}: {translated_text}")
             
@@ -882,6 +904,10 @@ class SimpleVITSServer:
         print(f"Host: {self.host}")
         print(f"Port: {self.port}")
         print(f"Target language: {self.target_lang}")
+        if self.source_lang:
+            print(f"Source language: {self.source_lang}")
+        else:
+            print(f"Source language: auto-detect")
         print(f"TTS model: {self.voices[self.target_lang]['fast_model']}")
         print("=" * 60)
         
@@ -912,6 +938,7 @@ def main():
     parser.add_argument("--host", default="localhost", help="Host to bind to")
     parser.add_argument("--port", type=int, default=5000, help="Port to bind to")
     parser.add_argument("--targets", "-t", required=True, help="Target language (e.g., 'es')")
+    parser.add_argument("--source-lang", "-s", default=None, help="Source language for translation (e.g., 'en', 'fr'). Defaults to auto-detect.")
     parser.add_argument("--save-local", action="store_true", help="Save processed fragments locally")
     parser.add_argument("--output-dir", default="./processed_fragments", help="Output directory for local saves")
     parser.add_argument("--config", "-c", default="coqui-voices.yaml", help="Voice configuration file")

@@ -3,6 +3,25 @@
 
 # VITS model configurations for different languages
 vits_models:
+  en:
+    # English Tacotron2 models (no espeak required)
+    speaker_0:
+      model: "tts_models/en/ljspeech/tacotron2-DDC"
+      speaker_id: 0  # First speaker in multi-speaker model
+      fallback_model: "tts_models/en/ljspeech/tacotron2-DDC"
+    speaker_1:
+      model: "tts_models/en/ljspeech/tacotron2-DDC"
+      speaker_id: 1  # Second speaker in multi-speaker model
+      fallback_model: "tts_models/en/ljspeech/tacotron2-DDC"
+    speaker_2:
+      model: "tts_models/en/ljspeech/tacotron2-DDC"
+      speaker_id: 2  # Third speaker in multi-speaker model
+      fallback_model: "tts_models/en/ljspeech/tacotron2-DDC"
+    default:
+      model: "tts_models/en/ljspeech/tacotron2-DDC"
+      speaker_id: 0
+      fallback_model: "tts_models/en/ljspeech/tacotron2-DDC"
+
   es:
     # Spanish VITS models
     speaker_0:
@@ -143,14 +162,14 @@ speaker_characteristics:
 # Voice sample mappings (optional - for voice cloning if needed)
 voice_samples:
   speaker_0:
-    sample_path: "./voice_samples/speaker_0_sample.wav"
-    description: "Sample audio for speaker_0 voice cloning"
+    sample_path: "./voice_samples/joe_buck_voice_sample.wav"
+    description: "Joe Buck voice cloning for speaker_0"
   speaker_1:
-    sample_path: "./voice_samples/speaker_1_sample.wav"
-    description: "Sample audio for speaker_1 voice cloning"
+    sample_path: "./voice_samples/color_commentator.wav"
+    description: "Color commentator voice cloning for speaker_1"
   speaker_2:
-    sample_path: "./voice_samples/speaker_2_sample.wav"
-    description: "Sample audio for speaker_2 voice cloning"
+    sample_path: "./voice_samples/referee_sample.wav"
+    description: "Referee voice cloning for speaker_2"
 
 # Configuration options
 config:

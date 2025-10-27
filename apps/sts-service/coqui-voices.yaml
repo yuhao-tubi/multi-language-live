@@ -1,4 +1,18 @@
 languages:
+  en:
+    model: "tts_models/multilingual/multi-dataset/xtts_v2"
+    fast_model: "tts_models/en/ljspeech/tacotron2-DDC"  # Fast Tacotron2 model for English (no espeak required)
+    multi_speaker: true
+    speakers:
+      JOE:
+        speaker: "Andrew Chipper"
+        voice_sample: "./voice_samples/joe_buck_voice_sample.wav"
+      REFEREE:
+        speaker: "Andrew Chipper"
+        voice_sample: null
+      default:
+        speaker: "Andrew Chipper"
+        voice_sample: "./voice_samples/joe_buck_voice_sample.wav"
   es:
     model: "tts_models/multilingual/multi-dataset/xtts_v2"
     fast_model: "tts_models/es/css10/vits"  # Fast VITS model for performance testing
